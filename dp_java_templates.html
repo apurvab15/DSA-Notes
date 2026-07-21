@@ -1,0 +1,697 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DP Patterns — Java Templates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0e1116; --surface:#161a22; --surface2:#1b2029; --border:#262c38;
+    --code-bg:#0b0e13; --text:#dce1ea; --muted:#8b93a7; --faint:#5d6577;
+    --recur:#e0a458;   /* raw idea  */
+    --memo:#4fb6a5;    /* cached    */
+    --tab:#8891e6;     /* assembled */
+    --rose:#d9707a;    /* caveat    */
+    --kw:#7cc7f5; --ty:#5fd0bd; --st:#e0a458; --nm:#c99be8; --cm:#5d6577;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --disp:'Space Grotesk',system-ui,sans-serif;
+    --body:'Inter',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--ink);color:var(--text);font-family:var(--body);
+       line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+  /* header */
+  header{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#12151d,var(--ink));}
+  .head-inner{padding-top:34px;padding-bottom:22px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+  h1{font-family:var(--disp);font-weight:700;font-size:clamp(26px,4.4vw,40px);margin:6px 0 4px;letter-spacing:-.01em}
+  h1 .java{color:var(--recur)}
+  .sub{color:var(--muted);max-width:66ch;font-size:15px}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:18px;font-family:var(--mono);font-size:12.5px}
+  .legend span{display:inline-flex;align-items:center;gap:7px;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+  /* sticky nav */
+  nav{position:sticky;top:0;z-index:20;background:rgba(14,17,22,.86);backdrop-filter:blur(10px);
+      border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex;gap:8px;overflow-x:auto;padding:11px 20px;max-width:1180px;margin:0 auto;
+             scrollbar-width:thin}
+  .nav-inner a{flex:0 0 auto;font-family:var(--mono);font-size:12.5px;color:var(--muted);
+     text-decoration:none;padding:5px 11px;border:1px solid var(--border);border-radius:999px;
+     white-space:nowrap;transition:.15s}
+  .nav-inner a:hover{color:var(--text);border-color:var(--tab);background:var(--surface)}
+
+  /* intro blocks */
+  section{padding:30px 0}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px}
+  h2.block{font-family:var(--disp);font-size:19px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+  .lead{color:var(--muted);font-size:14.5px;margin:0 0 16px;max-width:80ch}
+
+  table.state{width:100%;border-collapse:collapse;font-size:13.5px}
+  table.state th,table.state td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+  table.state th{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:500}
+  table.state td:nth-child(1){color:var(--text)}
+  table.state td:nth-child(2){font-family:var(--mono);color:var(--memo);white-space:nowrap}
+  table.state td:nth-child(3){font-family:var(--mono);color:var(--tab);font-size:12.5px}
+  table.state tr:last-child td{border-bottom:none}
+
+  /* pattern cards */
+  .card{border:1px solid var(--border);border-radius:14px;background:var(--surface);
+        margin:20px 0;overflow:hidden;scroll-margin-top:64px}
+  .card-head{padding:18px 22px 14px;border-bottom:1px solid var(--border);
+             background:linear-gradient(180deg,var(--surface2),var(--surface))}
+  .idx{font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .card-head h3{font-family:var(--disp);font-size:21px;font-weight:600;margin:2px 0 10px;letter-spacing:-.01em}
+  .meta{display:grid;gap:8px;font-size:13.5px}
+  .meta .row{display:flex;gap:9px;align-items:baseline}
+  .meta .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+     color:var(--faint);flex:0 0 82px;padding-top:2px}
+  .meta .row.recognize .tag{color:var(--recur)}
+  .meta .state code{font-family:var(--mono);font-size:12.5px;color:var(--ty);background:var(--code-bg);
+     padding:2px 6px;border-radius:5px;border:1px solid var(--border)}
+  .cx{font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+  .body{padding:16px 22px 22px}
+  .rungs{display:flex;gap:14px;align-items:stretch}
+  .rung{flex:1;min-width:0;display:flex;flex-direction:column}
+  .rung.full{flex:1 1 100%}
+  .rung-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+  .rung-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+     display:inline-flex;align-items:center;gap:7px;font-weight:600}
+  .rung.recur .rung-label{color:var(--recur)} .rung.recur .bar{background:var(--recur)}
+  .rung.memo  .rung-label{color:var(--memo)}  .rung.memo  .bar{background:var(--memo)}
+  .rung.tab   .rung-label{color:var(--tab)}   .rung.tab   .bar{background:var(--tab)}
+  .bar{width:22px;height:3px;border-radius:2px}
+  .copy{font-family:var(--mono);font-size:11px;color:var(--faint);background:transparent;
+        border:1px solid var(--border);border-radius:6px;padding:3px 9px;cursor:pointer;transition:.15s}
+  .copy:hover{color:var(--text);border-color:var(--memo)}
+  .copy.ok{color:var(--memo);border-color:var(--memo)}
+  pre{margin:0;background:var(--code-bg);border:1px solid var(--border);border-radius:9px;
+      padding:14px 15px;overflow:auto;max-height:440px;flex:1}
+  .rung.full pre{max-height:none}
+  code{font-family:var(--mono);font-size:12.4px;line-height:1.62;white-space:pre;tab-size:4}
+  pre::-webkit-scrollbar,.nav-inner::-webkit-scrollbar{height:9px;width:9px}
+  pre::-webkit-scrollbar-thumb,.nav-inner::-webkit-scrollbar-thumb{background:#2c3340;border-radius:6px}
+  .divider{display:flex;align-items:center;gap:12px;margin:16px 0 12px;color:var(--faint);
+     font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+  .divider::after{content:"";flex:1;height:1px;background:var(--border)}
+
+  .caveat{margin-top:16px;border:1px solid #3a2830;background:#1d151a;border-left:3px solid var(--rose);
+          border-radius:8px;padding:12px 15px;font-size:13.5px}
+  .caveat .clab{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+     color:var(--rose);display:block;margin-bottom:4px;font-weight:600}
+  .caveat code{font-family:var(--mono);font-size:12px;background:#241a20;padding:1px 5px;border-radius:4px}
+
+  .problems{margin-top:18px;padding-top:16px;border-top:1px dashed var(--border)}
+  .problems .plab{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;text-decoration:none;
+        padding:6px 10px 6px 7px;border:1px solid var(--border);border-radius:8px;background:var(--code-bg);
+        color:var(--text);transition:.15s}
+  .chip:hover{border-color:var(--tab);background:var(--surface2)}
+  .chip .d{font-family:var(--mono);font-size:10px;font-weight:600;width:16px;height:16px;flex:0 0 16px;
+           display:inline-flex;align-items:center;justify-content:center;border-radius:4px}
+  .chip .d.E{background:rgba(79,182,165,.16);color:#5fd0bd}
+  .chip .d.M{background:rgba(224,164,88,.16);color:var(--recur)}
+  .chip .d.H{background:rgba(217,112,122,.16);color:var(--rose)}
+  .chip .arr{color:var(--faint);font-size:11px;margin-left:1px}
+
+  /* token colors */
+  .kw{color:var(--kw)} .ty{color:var(--ty)} .st{color:var(--st)} .nm{color:var(--nm)}
+  .cm{color:var(--cm);font-style:italic}
+
+  footer{border-top:1px solid var(--border);padding-top:26px;padding-bottom:40px;color:var(--muted);font-size:13.5px}
+  footer b{color:var(--text)}
+
+  @media (max-width:760px){
+    .rungs{flex-direction:column}
+    pre{max-height:360px}
+    .meta .tag{flex-basis:70px}
+  }
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+</style>
+
+<header>
+  <div class="wrap head-inner">
+    <div class="kicker">Google interview prep · pattern recognition</div>
+    <h1>DP Patterns, in <span class="java">Java</span></h1>
+    <p class="sub">Twelve reusable shapes. For each: how to recognise it, how to define the state, and three rungs of the same idea — pure <b>recurrence</b> and <b>memoization</b> side by side, <b>tabulation</b> below. Every template here was compiled and cross-checked so all three rungs return the same answer.</p>
+    <div class="legend">
+      <span><i class="dot" style="background:var(--recur)"></i>Recurrence — the raw relation</span>
+      <span><i class="dot" style="background:var(--memo)"></i>Memo — recurrence + a cache</span>
+      <span><i class="dot" style="background:var(--tab)"></i>Tabulation — built bottom-up</span>
+      <span><i class="dot" style="background:var(--rose)"></i>Caveat — the thing that bites</span>
+    </div>
+  </div>
+</header>
+
+<nav><div class="nav-inner" id="nav"></div></nav>
+
+<div class="wrap">
+
+  <section>
+    <div class="panel">
+      <h2 class="block">First move on any new problem: design the state</h2>
+      <p class="lead">You solve most problems the moment you name the state in one sentence. Match the cue, get the shape, then drop in the matching template below. Stuck? Write the brute-force recursion and cache its arguments — that <em>is</em> a DP, and a slow correct one beats a blank screen.</p>
+      <table class="state">
+        <thead><tr><th>Cue in the problem</th><th>State shape</th><th>Pattern</th></tr></thead>
+        <tbody>
+          <tr><td>Choice at each index, adjacent constraint</td><td>dp[i]</td><td>Sec 1 Linear take/skip</td></tr>
+          <tr><td>Best <em>contiguous</em> subarray</td><td>dp[i] = best ending at i</td><td>Sec 2 Kadane</td></tr>
+          <tr><td>Reach a target sum / capacity</td><td>dp[i][cap] → dp[cap]</td><td>Sec 3–4 Knapsack</td></tr>
+          <tr><td>Two strings / two arrays</td><td>dp[i][j] (prefixes)</td><td>Sec 7 Two-sequence</td></tr>
+          <tr><td>Range, splits or ends matter</td><td>dp[i][j] over (i,j)</td><td>Sec 8 Interval</td></tr>
+          <tr><td>It's a tree</td><td>postorder return value</td><td>Sec 9 Tree DP</td></tr>
+          <tr><td>Two players, both optimal</td><td>dp(i,j) = score diff</td><td>Sec 10 Minimax</td></tr>
+          <tr><td>n ≤ ~20, pick a subset / order</td><td>dp[mask]</td><td>Sec 11 Bitmask</td></tr>
+          <tr><td>Distinct modes you switch between</td><td>one var per mode</td><td>Sec 12 State machine</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div id="cards"></div>
+
+  <footer class="wrap">
+    <p>Reading order: <b>recognise → state → recurrence → memo → tabulation</b>. In an interview, write the memoized form first — it mirrors the recurrence and is hard to get wrong; convert to tabulation only if asked or for space. If four of these are truly reflexive, you cover most Google DP: <b>Knapsack (Sec 3), Two-sequence/LCS (Sec 7), Interval (Sec 8), Tree DP (Sec 9)</b>. State your complexity out loud before coding, every time.</p>
+  </footer>
+</div>
+
+<script>
+const KW = new Set("static int return if else for while new void class boolean true false char this null continue final long double break".split(" "));
+const TY = new Set("Integer Math String Arrays List Map HashMap TreeNode Object Deque ArrayDeque".split(" "));
+function esc(s){return s.replace(/[<>&]/g,c=>c==='<'?'&lt;':c==='>'?'&gt;':'&amp;');}
+function highlight(code){
+  let out='', i=0, n=code.length;
+  while(i<n){
+    const c=code[i];
+    if(c==='/'&&code[i+1]==='/'){let j=i;while(j<n&&code[j]!=='\n')j++;out+='<span class="cm">'+esc(code.slice(i,j))+'</span>';i=j;continue;}
+    if(c==='/'&&code[i+1]==='*'){let j=i+2;while(j<n&&!(code[j]==='*'&&code[j+1]==='/'))j++;j=Math.min(n,j+2);out+='<span class="cm">'+esc(code.slice(i,j))+'</span>';i=j;continue;}
+    if(c==='"'){let j=i+1;while(j<n&&code[j]!=='"'){if(code[j]==='\\')j++;j++;}j=Math.min(n,j+1);out+='<span class="st">'+esc(code.slice(i,j))+'</span>';i=j;continue;}
+    if(c==="'"){let j=i+1;while(j<n&&code[j]!=="'"){if(code[j]==='\\')j++;j++;}j=Math.min(n,j+1);out+='<span class="st">'+esc(code.slice(i,j))+'</span>';i=j;continue;}
+    if(/[0-9]/.test(c)){let j=i;while(j<n&&/[0-9_.xXa-fA-F]/.test(code[j]))j++;out+='<span class="nm">'+esc(code.slice(i,j))+'</span>';i=j;continue;}
+    if(/[A-Za-z_$]/.test(c)){let j=i;while(j<n&&/[A-Za-z0-9_$]/.test(code[j]))j++;const w=code.slice(i,j);const cls=KW.has(w)?'kw':(TY.has(w)?'ty':'');out+=cls?'<span class="'+cls+'">'+esc(w)+'</span>':esc(w);i=j;continue;}
+    out+=esc(c);i++;
+  }
+  return out;
+}
+
+const PROBLEMS = {"linear": [{"t": "Climbing Stairs", "d": "E", "u": "https://leetcode.com/problems/climbing-stairs"}, {"t": "House Robber", "d": "M", "u": "https://leetcode.com/problems/house-robber"}, {"t": "House Robber II", "d": "M", "u": "https://leetcode.com/problems/house-robber-ii"}, {"t": "Decode Ways", "d": "M", "u": "https://leetcode.com/problems/decode-ways"}, {"t": "Delete and Earn", "d": "M", "u": "https://leetcode.com/problems/delete-and-earn"}], "kadane": [{"t": "Maximum Subarray", "d": "M", "u": "https://leetcode.com/problems/maximum-subarray"}, {"t": "Best Time to Buy and Sell Stock", "d": "E", "u": "https://leetcode.com/problems/best-time-to-buy-and-sell-stock"}, {"t": "Maximum Product Subarray", "d": "M", "u": "https://leetcode.com/problems/maximum-product-subarray"}, {"t": "Maximum Sum Circular Subarray", "d": "M", "u": "https://leetcode.com/problems/maximum-sum-circular-subarray"}], "knapsack": [{"t": "Partition Equal Subset Sum", "d": "M", "u": "https://leetcode.com/problems/partition-equal-subset-sum"}, {"t": "Target Sum", "d": "M", "u": "https://leetcode.com/problems/target-sum"}, {"t": "Ones and Zeroes", "d": "M", "u": "https://leetcode.com/problems/ones-and-zeroes"}, {"t": "Last Stone Weight II", "d": "M", "u": "https://leetcode.com/problems/last-stone-weight-ii"}], "coin": [{"t": "Coin Change", "d": "M", "u": "https://leetcode.com/problems/coin-change"}, {"t": "Word Break", "d": "M", "u": "https://leetcode.com/problems/word-break"}, {"t": "Perfect Squares", "d": "M", "u": "https://leetcode.com/problems/perfect-squares"}, {"t": "Coin Change II", "d": "M", "u": "https://leetcode.com/problems/coin-change-ii"}, {"t": "Combination Sum IV", "d": "M", "u": "https://leetcode.com/problems/combination-sum-iv"}], "lis": [{"t": "Russian Doll Envelopes", "d": "H", "u": "https://leetcode.com/problems/russian-doll-envelopes"}, {"t": "Longest Increasing Subsequence", "d": "M", "u": "https://leetcode.com/problems/longest-increasing-subsequence"}, {"t": "Largest Divisible Subset", "d": "M", "u": "https://leetcode.com/problems/largest-divisible-subset"}, {"t": "Longest String Chain", "d": "M", "u": "https://leetcode.com/problems/longest-string-chain"}, {"t": "Number of Longest Increasing Subsequence", "d": "M", "u": "https://leetcode.com/problems/number-of-longest-increasing-subsequence"}], "grid": [{"t": "Maximal Square", "d": "M", "u": "https://leetcode.com/problems/maximal-square"}, {"t": "Unique Paths", "d": "M", "u": "https://leetcode.com/problems/unique-paths"}, {"t": "Minimum Path Sum", "d": "M", "u": "https://leetcode.com/problems/minimum-path-sum"}, {"t": "Triangle", "d": "M", "u": "https://leetcode.com/problems/triangle"}, {"t": "Dungeon Game", "d": "H", "u": "https://leetcode.com/problems/dungeon-game"}], "lcs": [{"t": "Longest Common Subsequence", "d": "M", "u": "https://leetcode.com/problems/longest-common-subsequence"}, {"t": "Edit Distance", "d": "M", "u": "https://leetcode.com/problems/edit-distance"}, {"t": "Regular Expression Matching", "d": "H", "u": "https://leetcode.com/problems/regular-expression-matching"}, {"t": "Wildcard Matching", "d": "H", "u": "https://leetcode.com/problems/wildcard-matching"}, {"t": "Distinct Subsequences", "d": "H", "u": "https://leetcode.com/problems/distinct-subsequences"}], "interval": [{"t": "Longest Palindromic Substring", "d": "M", "u": "https://leetcode.com/problems/longest-palindromic-substring"}, {"t": "Burst Balloons", "d": "H", "u": "https://leetcode.com/problems/burst-balloons"}, {"t": "Longest Palindromic Subsequence", "d": "M", "u": "https://leetcode.com/problems/longest-palindromic-subsequence"}, {"t": "Palindrome Partitioning II", "d": "H", "u": "https://leetcode.com/problems/palindrome-partitioning-ii"}, {"t": "Minimum Cost to Merge Stones", "d": "H", "u": "https://leetcode.com/problems/minimum-cost-to-merge-stones"}], "tree": [{"t": "Binary Tree Maximum Path Sum", "d": "H", "u": "https://leetcode.com/problems/binary-tree-maximum-path-sum"}, {"t": "Sum of Distances in Tree", "d": "H", "u": "https://leetcode.com/problems/sum-of-distances-in-tree"}, {"t": "House Robber III", "d": "M", "u": "https://leetcode.com/problems/house-robber-iii"}, {"t": "Binary Tree Cameras", "d": "H", "u": "https://leetcode.com/problems/binary-tree-cameras"}], "game": [{"t": "Predict the Winner", "d": "M", "u": "https://leetcode.com/problems/predict-the-winner"}, {"t": "Stone Game III", "d": "H", "u": "https://leetcode.com/problems/stone-game-iii"}, {"t": "Guess Number Higher or Lower II", "d": "M", "u": "https://leetcode.com/problems/guess-number-higher-or-lower-ii"}, {"t": "Stone Game", "d": "M", "u": "https://leetcode.com/problems/stone-game"}, {"t": "Divisor Game", "d": "E", "u": "https://leetcode.com/problems/divisor-game"}], "bitmask": [{"t": "Shortest Path Visiting All Nodes", "d": "H", "u": "https://leetcode.com/problems/shortest-path-visiting-all-nodes"}, {"t": "Optimal Account Balancing", "d": "H", "u": "https://leetcode.com/problems/optimal-account-balancing"}, {"t": "Parallel Courses II", "d": "H", "u": "https://leetcode.com/problems/parallel-courses-ii"}, {"t": "Beautiful Arrangement", "d": "M", "u": "https://leetcode.com/problems/beautiful-arrangement"}, {"t": "Partition to K Equal Sum Subsets", "d": "M", "u": "https://leetcode.com/problems/partition-to-k-equal-sum-subsets"}], "statemachine": [{"t": "Best Time to Buy and Sell Stock II", "d": "M", "u": "https://leetcode.com/problems/best-time-to-buy-and-sell-stock-ii"}, {"t": "Best Time to Buy and Sell Stock with Cooldown", "d": "M", "u": "https://leetcode.com/problems/best-time-to-buy-and-sell-stock-with-cooldown"}, {"t": "Best Time to Buy and Sell Stock III", "d": "H", "u": "https://leetcode.com/problems/best-time-to-buy-and-sell-stock-iii"}, {"t": "Best Time to Buy and Sell Stock IV", "d": "H", "u": "https://leetcode.com/problems/best-time-to-buy-and-sell-stock-iv"}, {"t": "Best Time to Buy and Sell Stock with Transaction Fee", "d": "M", "u": "https://leetcode.com/problems/best-time-to-buy-and-sell-stock-with-transaction-fee"}]};
+const P = [
+{id:'linear',name:'Linear take / skip',
+ recognize:'1D array; each element is an include/exclude choice tied to its neighbour.',
+ state:'dp[i] = best answer over the first i+1 elements, deciding on element i.',
+ cx:'Rec O(2ⁿ) · Memo/Tab O(n) time · O(n)→O(1) space',
+ recur:`// f(i) = best loot considering houses 0..i
+int rob(int[] a, int i) {
+    if (i < 0) return 0;                    // no houses left
+    return Math.max(rob(a, i - 1),          // skip house i
+                    rob(a, i - 2) + a[i]);  // rob house i
+}
+// answer: rob(a, a.length - 1)`,
+ memo:`// same recurrence + a cache indexed by i
+int rob(int[] a, int i, Integer[] memo) {
+    if (i < 0) return 0;                    // guard BEFORE memo access
+    if (memo[i] != null) return memo[i];
+    return memo[i] = Math.max(rob(a, i - 1, memo),
+                              rob(a, i - 2, memo) + a[i]);
+}
+// call: rob(a, n - 1, new Integer[n])`,
+ tab:`int rob(int[] a) {
+    int n = a.length;
+    if (n == 0) return 0;
+    if (n == 1) return a[0];
+    int[] dp = new int[n];
+    dp[0] = a[0];
+    dp[1] = Math.max(a[0], a[1]);
+    for (int i = 2; i < n; i++)
+        dp[i] = Math.max(dp[i - 1], dp[i - 2] + a[i]);
+    return dp[n - 1];
+}`,
+ caveat:'The recursion reaches <code>i = -1</code>, which has no memo slot — the <code>if (i &lt; 0)</code> guard must come <em>before</em> the memo lookup or you throw. Tabulation needs an explicit <code>n == 1</code> base, since <code>dp[1]</code> reads <code>a[1]</code>.'},
+
+{id:'kadane',name:'Kadane — best ending here',
+ recognize:'Best <em>contiguous</em> subarray/substring under a running measure.',
+ state:'dp[i] = best subarray ending exactly at i (not "in the first i").',
+ cx:'O(n) time · O(1) space (tab)',
+ recur:`// f(i) = best subarray ENDING at index i
+int endingAt(int[] a, int i) {
+    if (i == 0) return a[0];
+    return Math.max(a[i], a[i] + endingAt(a, i - 1)); // fresh, or extend
+}
+// answer = max of endingAt(a, i) over all i`,
+ memo:`int endingAt(int[] a, int i, Integer[] memo) {
+    if (i == 0) return a[0];
+    if (memo[i] != null) return memo[i];
+    return memo[i] = Math.max(a[i], a[i] + endingAt(a, i - 1, memo));
+}
+// answer = max over i of endingAt(a, i, memo)`,
+ tab:`int maxSubArray(int[] a) {
+    int best = a[0], cur = a[0];
+    for (int i = 1; i < a.length; i++) {
+        cur  = Math.max(a[i], cur + a[i]);
+        best = Math.max(best, cur);
+    }
+    return best;
+}`,
+ caveat:'The answer is the max over <em>all</em> <code>dp[i]</code>, not <code>dp[n-1]</code> — the best subarray can end anywhere. Initialise <code>best = a[0]</code>, never <code>0</code>, or an all-negative array wrongly returns 0.'},
+
+{id:'knapsack',name:'0/1 Knapsack',
+ recognize:'Pick a subset of items to hit/optimise a numeric target or capacity.',
+ state:'dp[i][cap] = best value using items i.. within capacity cap.',
+ cx:'Rec O(2ⁿ) · Memo/Tab O(n·W) time · O(W) space',
+ recur:`// f(i, cap): best value from items i.. within capacity cap
+int knap(int[] wt, int[] val, int i, int cap) {
+    if (i == wt.length || cap == 0) return 0;
+    int skip = knap(wt, val, i + 1, cap);
+    int take = wt[i] <= cap
+             ? val[i] + knap(wt, val, i + 1, cap - wt[i])
+             : 0;
+    return Math.max(skip, take);
+}`,
+ memo:`int knap(int[] wt, int[] val, int i, int cap, Integer[][] memo) {
+    if (i == wt.length || cap == 0) return 0;
+    if (memo[i][cap] != null) return memo[i][cap];
+    int skip = knap(wt, val, i + 1, cap, memo);
+    int take = wt[i] <= cap
+             ? val[i] + knap(wt, val, i + 1, cap - wt[i], memo)
+             : 0;
+    return memo[i][cap] = Math.max(skip, take);
+}
+// memo = new Integer[items][W + 1]`,
+ tab:`// 1D, capacity looped BACKWARD -> each item used at most once
+int knap(int[] wt, int[] val, int W) {
+    int[] dp = new int[W + 1];
+    for (int i = 0; i < wt.length; i++)
+        for (int c = W; c >= wt[i]; c--)          // reverse!
+            dp[c] = Math.max(dp[c], dp[c - wt[i]] + val[i]);
+    return dp[W];
+}`,
+ caveat:'Backward capacity loop = 0/1 (each item once). Flip it <em>forward</em> and you silently get <b>unbounded</b> knapsack (item reused) — that single change breaks Partition-Equal-Subset-Sum and Target-Sum.'},
+
+{id:'coin',name:'Unbounded knapsack — Coin Change',
+ recognize:'Reach a target by summing items you can <em>reuse</em> (min count / count ways).',
+ state:'dp[a] = fewest coins summing to amount a.',
+ cx:'Memo/Tab O(amount · #coins) time · O(amount) space',
+ recur:`// f(a) = fewest coins to make amount a   (INF = impossible)
+int cc(int[] coins, int a) {
+    if (a == 0) return 0;
+    if (a < 0)  return INF;
+    int best = INF;
+    for (int c : coins) {
+        int sub = cc(coins, a - c);
+        if (sub != INF) best = Math.min(best, 1 + sub);
+    }
+    return best;
+}`,
+ memo:`int cc(int[] coins, int a, Integer[] memo) {
+    if (a == 0) return 0;
+    if (a < 0)  return INF;                 // guard before memo (negative idx)
+    if (memo[a] != null) return memo[a];
+    int best = INF;
+    for (int c : coins) {
+        int sub = cc(coins, a - c, memo);
+        if (sub != INF) best = Math.min(best, 1 + sub);
+    }
+    return memo[a] = best;
+}`,
+ tab:`int coinChange(int[] coins, int amt) {
+    int[] dp = new int[amt + 1];
+    Arrays.fill(dp, INF);
+    dp[0] = 0;
+    for (int c : coins)
+        for (int a = c; a <= amt; a++)
+            if (dp[a - c] != INF)
+                dp[a] = Math.min(dp[a], dp[a - c] + 1);
+    return dp[amt] == INF ? -1 : dp[amt];
+}`,
+ caveat:'Use an INF sentinel and skip it before <code>1 + sub</code>, or you both overflow and treat impossible states as reachable. For <b>counting ways</b> (Coin Change II): coins in the <em>outer</em> loop = combinations; amount outer = permutations. This loop-order flip is the classic trap.'},
+
+{id:'lis',name:'Longest Increasing Subsequence',
+ recognize:'Longest/optimal <em>subsequence</em> (non-contiguous) with an ordering rule.',
+ state:'dp[i] = length of the LIS ending at index i.',
+ cx:'This form O(n²) time · O(n) space · patience-sort variant O(n log n)',
+ recur:`// f(i) = LIS length ending at index i
+int lisEnd(int[] a, int i) {
+    int best = 1;
+    for (int j = 0; j < i; j++)
+        if (a[j] < a[i]) best = Math.max(best, 1 + lisEnd(a, j));
+    return best;
+}
+// answer = max over i of lisEnd(a, i)`,
+ memo:`int lisEnd(int[] a, int i, Integer[] memo) {
+    if (memo[i] != null) return memo[i];
+    int best = 1;
+    for (int j = 0; j < i; j++)
+        if (a[j] < a[i]) best = Math.max(best, 1 + lisEnd(a, j, memo));
+    return memo[i] = best;
+}`,
+ tab:`int lengthOfLIS(int[] a) {
+    int n = a.length, best = 1;
+    int[] dp = new int[n];
+    Arrays.fill(dp, 1);
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < i; j++)
+            if (a[j] < a[i]) dp[i] = Math.max(dp[i], dp[j] + 1);
+        best = Math.max(best, dp[i]);
+    }
+    return best;
+}`,
+ caveat:'Answer is the max over <code>dp[]</code>, not <code>dp[n-1]</code>. <code>&lt;</code> gives strictly increasing; use <code>&lt;=</code> for non-decreasing. Know the O(n log n) version too (binary-search a <code>tails</code> array) for large n — and for Russian Doll Envelopes, sort by one dimension then run LIS on the other.'},
+
+{id:'grid',name:'Grid / Matrix DP',
+ recognize:'2D grid, fixed moves (right / down), optimise a path.',
+ state:'dp[i][j] = best cost to reach cell (i, j).',
+ cx:'O(rows·cols) time · O(cols) space compressed',
+ recur:`// f(i, j) = min path sum to reach (i, j) from (0, 0)
+int grid(int[][] g, int i, int j) {
+    if (i == 0 && j == 0) return g[0][0];
+    if (i < 0 || j < 0)   return INF;       // off-grid neighbour
+    return g[i][j] + Math.min(grid(g, i - 1, j),
+                              grid(g, i, j - 1));
+}`,
+ memo:`int grid(int[][] g, int i, int j, Integer[][] memo) {
+    if (i == 0 && j == 0) return g[0][0];
+    if (i < 0 || j < 0)   return INF;
+    if (memo[i][j] != null) return memo[i][j];
+    return memo[i][j] = g[i][j] + Math.min(grid(g, i - 1, j, memo),
+                                           grid(g, i, j - 1, memo));
+}`,
+ tab:`int minPathSum(int[][] g) {
+    int rows = g.length, cols = g[0].length;
+    int[][] dp = new int[rows][cols];
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++) {
+            if (i == 0 && j == 0) { dp[i][j] = g[i][j]; continue; }
+            int up   = i > 0 ? dp[i - 1][j] : INF;
+            int left = j > 0 ? dp[i][j - 1] : INF;
+            dp[i][j] = g[i][j] + Math.min(up, left);
+        }
+    return dp[rows - 1][cols - 1];
+}`,
+ caveat:'Returning INF for off-grid neighbours lets one <code>min</code> handle edge cells — cleaner than special-casing row 0 and column 0 separately. <b>Maximal Square</b> is this shape with <code>dp[i][j] = min(up, left, up-left) + 1</code>; memorise that one, it\u2019s high-frequency and non-obvious.'},
+
+{id:'lcs',name:'Two-sequence DP (LCS family)',
+ recognize:'Two strings/arrays; align or transform one into the other.',
+ state:'dp[i][j] = answer for prefixes a[0..i) and b[0..j).',
+ cx:'O(m·n) time and space (→ O(n) with two rows)',
+ recur:`// f(i, j) over first i chars of a and first j of b
+int lcs(String a, String b, int i, int j) {
+    if (i == 0 || j == 0) return 0;
+    if (a.charAt(i - 1) == b.charAt(j - 1))
+        return 1 + lcs(a, b, i - 1, j - 1);      // match: take both
+    return Math.max(lcs(a, b, i - 1, j),         // drop from a
+                    lcs(a, b, i, j - 1));        // drop from b
+}`,
+ memo:`int lcs(String a, String b, int i, int j, Integer[][] memo) {
+    if (i == 0 || j == 0) return 0;
+    if (memo[i][j] != null) return memo[i][j];
+    if (a.charAt(i - 1) == b.charAt(j - 1))
+        return memo[i][j] = 1 + lcs(a, b, i - 1, j - 1, memo);
+    return memo[i][j] = Math.max(lcs(a, b, i - 1, j, memo),
+                                 lcs(a, b, i, j - 1, memo));
+}
+// memo = new Integer[m + 1][n + 1]`,
+ tab:`int lcs(String a, String b) {
+    int m = a.length(), n = b.length();
+    int[][] dp = new int[m + 1][n + 1];          // row/col 0 = empty prefix
+    for (int i = 1; i <= m; i++)
+        for (int j = 1; j <= n; j++)
+            dp[i][j] = a.charAt(i - 1) == b.charAt(j - 1)
+                     ? dp[i - 1][j - 1] + 1
+                     : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    return dp[m][n];
+}`,
+ caveat:'Prefixes are 1-indexed: <code>dp</code> is <code>(m+1)×(n+1)</code> and you compare <code>charAt(i-1)</code>. <b>Edit Distance</b> is the same grid with a 3-way min on mismatch. The <em>substring</em> (contiguous) variant is different — reset to 0 on mismatch and track a global max.'},
+
+{id:'interval',name:'Interval DP',
+ recognize:'Answer over a range shrinks from both ends, or splits at a point. Fill by increasing length.',
+ state:'dp[i][j] = answer over s[i..j].',
+ cx:'O(n²) time and space (LPS) · split-type is O(n³)',
+ recur:`// f(i, j) = longest palindromic subsequence in s[i..j]
+int lps(String s, int i, int j) {
+    if (i > j)  return 0;
+    if (i == j) return 1;
+    if (s.charAt(i) == s.charAt(j))
+        return 2 + lps(s, i + 1, j - 1);         // ends match
+    return Math.max(lps(s, i + 1, j),            // drop left
+                    lps(s, i, j - 1));           // drop right
+}`,
+ memo:`int lps(String s, int i, int j, Integer[][] memo) {
+    if (i > j)  return 0;
+    if (i == j) return 1;
+    if (memo[i][j] != null) return memo[i][j];
+    if (s.charAt(i) == s.charAt(j))
+        return memo[i][j] = 2 + lps(s, i + 1, j - 1, memo);
+    return memo[i][j] = Math.max(lps(s, i + 1, j, memo),
+                                 lps(s, i, j - 1, memo));
+}`,
+ tab:`int lps(String s) {
+    int n = s.length();
+    int[][] dp = new int[n][n];
+    for (int i = n - 1; i >= 0; i--) {           // i high->low: needs dp[i+1][*]
+        dp[i][i] = 1;
+        for (int j = i + 1; j < n; j++)
+            dp[i][j] = s.charAt(i) == s.charAt(j)
+                     ? dp[i + 1][j - 1] + 2
+                     : Math.max(dp[i + 1][j], dp[i][j - 1]);
+    }
+    return dp[0][n - 1];
+}`,
+ caveat:'Fill order is the trap: <code>i</code> goes high→low and <code>j</code> low→high so <code>dp[i+1][j-1]</code> is ready. For <b>split-type</b> interval DP (Burst Balloons, Matrix-Chain) loop by length, then a split point <code>k</code> inside — and iterate over the <em>last</em> operation in the interval, not the first, so the sub-intervals stay independent.'},
+
+{id:'tree',name:'Tree DP',
+ recognize:'It\u2019s a tree; a node\u2019s answer combines its children\u2019s answers (post-order).',
+ state:'dp(node) returns the info the parent needs — often a small array.',
+ cx:'O(nodes) time · O(height) recursion stack',
+ recur:`// returns {robThis, skipThis} for the subtree at node
+int[] rob(TreeNode node) {
+    if (node == null) return new int[]{0, 0};
+    int[] L = rob(node.left), R = rob(node.right);
+    int robThis  = node.val + L[1] + R[1];       // rob node -> skip children
+    int skipThis = Math.max(L[0], L[1])
+                 + Math.max(R[0], R[1]);         // skip node -> children free
+    return new int[]{robThis, skipThis};
+}
+// answer: max(rob(root)[0], rob(root)[1])`,
+ memo:`// A plain tree has NO repeated subproblems (each node visited once),
+// so you normally DON'T memoize -- the recursion IS the DP.
+// Add a cache only when the state carries extra params or it's a DAG:
+Map<TreeNode, int[]> memo = new HashMap<>();
+int[] rob(TreeNode node) {
+    if (node == null) return new int[]{0, 0};
+    int[] hit = memo.get(node);
+    if (hit != null) return hit;
+    int[] L = rob(node.left), R = rob(node.right);
+    int[] res = { node.val + L[1] + R[1],
+                  Math.max(L[0], L[1]) + Math.max(R[0], R[1]) };
+    memo.put(node, res);
+    return res;
+}`,
+ tab:`// "Bottom-up" on a tree = iterative post-order (children before parent)
+int rob(TreeNode root) {
+    Map<TreeNode, int[]> dp = new HashMap<>();
+    dp.put(null, new int[]{0, 0});
+    Deque<TreeNode> stack = new ArrayDeque<>();
+    TreeNode cur = root, last = null;
+    while (cur != null || !stack.isEmpty()) {
+        while (cur != null) { stack.push(cur); cur = cur.left; }
+        TreeNode peek = stack.peek();
+        if (peek.right != null && last != peek.right) {
+            cur = peek.right;                    // go right first
+        } else {
+            int[] L = dp.get(peek.left), R = dp.get(peek.right);
+            dp.put(peek, new int[]{ peek.val + L[1] + R[1],
+                     Math.max(L[0], L[1]) + Math.max(R[0], R[1]) });
+            last = stack.pop();
+        }
+    }
+    int[] r = dp.get(root);
+    return Math.max(r[0], r[1]);
+}`,
+ caveat:'Trees rarely have overlapping subproblems, so the recursion already <em>is</em> the DP — reach for a memo only when the state gains a dimension (Kth-Ancestor) or the structure is a DAG. Watch for the <em>other</em> shape: <b>Binary Tree Max Path Sum</b> returns <code>node.val + max(L,R)</code> upward but updates a global with <code>node.val + L + R</code> (the path that turns at the node and can\u2019t go higher).'},
+
+{id:'game',name:'Game / Minimax DP',
+ recognize:'Two players alternate, both optimal; "can player 1 win / maximise their margin".',
+ state:'dp(i,j) = best score difference the player to move can force on a[i..j].',
+ cx:'O(n²) time and space',
+ recur:`// best (current - opponent) achievable on a[i..j]
+int pw(int[] a, int i, int j) {
+    if (i > j) return 0;
+    return Math.max(a[i] - pw(a, i + 1, j),   // take left
+                    a[j] - pw(a, i, j - 1));  // take right
+}
+// player 1 wins iff pw(a, 0, n - 1) >= 0`,
+ memo:`int pw(int[] a, int i, int j, Integer[][] memo) {
+    if (i > j) return 0;
+    if (memo[i][j] != null) return memo[i][j];
+    return memo[i][j] = Math.max(a[i] - pw(a, i + 1, j, memo),
+                                 a[j] - pw(a, i, j - 1, memo));
+}`,
+ tab:`boolean predictTheWinner(int[] a) {
+    int n = a.length;
+    int[][] dp = new int[n][n];
+    for (int i = 0; i < n; i++) dp[i][i] = a[i];
+    for (int len = 2; len <= n; len++)
+        for (int i = 0; i + len - 1 < n; i++) {
+            int j = i + len - 1;
+            dp[i][j] = Math.max(a[i] - dp[i + 1][j],
+                                a[j] - dp[i][j - 1]);
+        }
+    return dp[0][n - 1] >= 0;
+}`,
+ caveat:'Model <em>one</em> number — your score minus the opponent\u2019s best reply — not two separate scores. The subtraction is exactly what encodes "the opponent also plays optimally." Same fill-by-length order as interval DP.'},
+
+{id:'bitmask',name:'Bitmask DP',
+ recognize:'Small n (≤ ~20); track WHICH subset is used/visited; order or assignment matters.',
+ state:'dp[mask] = best cost having placed exactly the set bits of mask.',
+ cx:'O(2ⁿ · n) time · O(2ⁿ) space',
+ recur:`// bitCount(mask) = how many placed = which row/step we're on
+int assign(int[][] cost, int mask, int n) {
+    int i = Integer.bitCount(mask);
+    if (i == n) return 0;
+    int best = INF;
+    for (int j = 0; j < n; j++)
+        if ((mask & (1 << j)) == 0)                 // slot j free
+            best = Math.min(best,
+                    cost[i][j] + assign(cost, mask | (1 << j), n));
+    return best;
+}`,
+ memo:`int assign(int[][] cost, int mask, int n, Integer[] memo) {
+    int i = Integer.bitCount(mask);
+    if (i == n) return 0;
+    if (memo[mask] != null) return memo[mask];
+    int best = INF;
+    for (int j = 0; j < n; j++)
+        if ((mask & (1 << j)) == 0)
+            best = Math.min(best,
+                    cost[i][j] + assign(cost, mask | (1 << j), n, memo));
+    return memo[mask] = best;
+}
+// memo = new Integer[1 << n]`,
+ tab:`int assign(int[][] cost, int n) {
+    int[] dp = new int[1 << n];
+    Arrays.fill(dp, INF);
+    dp[0] = 0;
+    for (int mask = 0; mask < (1 << n); mask++) {   // ascending: submasks first
+        if (dp[mask] == INF) continue;
+        int i = Integer.bitCount(mask);
+        if (i == n) continue;
+        for (int j = 0; j < n; j++)
+            if ((mask & (1 << j)) == 0) {
+                int nm = mask | (1 << j);
+                dp[nm] = Math.min(dp[nm], dp[mask] + cost[i][j]);
+            }
+    }
+    return dp[(1 << n) - 1];
+}`,
+ caveat:'State space is <code>2ⁿ</code>, so this is only viable for <b>n ≤ ~20</b>. <code>Integer.bitCount(mask)</code> doubles as "which step am I on." Iterate masks ascending in tabulation so every submask is final before use. Bit ops: set <code>m | (1&lt;&lt;j)</code>, test <code>m &amp; (1&lt;&lt;j)</code>, clear <code>m &amp; ~(1&lt;&lt;j)</code>.'},
+
+{id:'statemachine',name:'State machine DP',
+ recognize:'You cycle through a few distinct "modes" with switching rules (cooldown, at-most-k).',
+ state:'dp(i, mode) = best from day i onward while in this mode.',
+ cx:'O(n) time · O(1) space (tab)',
+ recur:`// holding = do we currently own a share?
+int stk(int[] p, int i, boolean holding) {
+    if (i >= p.length) return 0;
+    if (holding)
+        return Math.max(stk(p, i + 1, true),           // keep holding
+                        p[i] + stk(p, i + 2, false));  // sell -> cooldown (i+2)
+    return Math.max(stk(p, i + 1, false),              // rest
+                    -p[i] + stk(p, i + 1, true));      // buy
+}
+// answer: stk(p, 0, false)`,
+ memo:`int stk(int[] p, int i, int holding, Integer[][] memo) {
+    if (i >= p.length) return 0;
+    if (memo[i][holding] != null) return memo[i][holding];
+    int res;
+    if (holding == 1)
+        res = Math.max(stk(p, i + 1, 1, memo),
+              p[i] + (i + 2 < p.length ? stk(p, i + 2, 0, memo) : 0));
+    else
+        res = Math.max(stk(p, i + 1, 0, memo),
+                       -p[i] + stk(p, i + 1, 1, memo));
+    return memo[i][holding] = res;
+}
+// memo = new Integer[n][2]`,
+ tab:`// three rolling modes: hold / sold-today / resting
+int maxProfit(int[] prices) {
+    int hold = Integer.MIN_VALUE, sold = 0, rest = 0;
+    for (int x : prices) {
+        int pHold = hold, pSold = sold, pRest = rest;
+        hold = Math.max(pHold, pRest - x);   // keep, or buy from rest
+        sold = pHold + x;                    // sell today
+        rest = Math.max(pRest, pSold);       // idle, or day after selling
+    }
+    return Math.max(sold, rest);
+}`,
+ caveat:'Cooldown is encoded by jumping to <code>i+2</code> after a sale. Initialise <code>hold = Integer.MIN_VALUE</code> — you can\u2019t already own a share for free on day 0. The 3-variable loop is this same recurrence, space-optimised: <code>sold</code> and <code>rest</code> are separate modes precisely to enforce the one-day gap.'},
+];
+
+function rungBlock(cls,label,code,id){
+  return `<div class="rung ${cls}">
+    <div class="rung-head">
+      <span class="rung-label"><span class="bar"></span>${label}</span>
+      <button class="copy" data-code="${id}">copy</button>
+    </div>
+    <pre><code>${highlight(code)}</code></pre>
+  </div>`;
+}
+
+const codeStore = {};
+const cards = document.getElementById('cards');
+const nav = document.getElementById('nav');
+P.forEach((p,idx)=>{
+  const n = idx+1;
+  const rid=p.id+'-recur', mid=p.id+'-memo', tid=p.id+'-tab';
+  codeStore[rid]=p.recur; codeStore[mid]=p.memo; codeStore[tid]=p.tab;
+  const el=document.createElement('div');
+  el.className='card'; el.id=p.id;
+  el.innerHTML=`
+    <div class="card-head">
+      <span class="idx">Sec ${n}</span>
+      <h3>${p.name}</h3>
+      <div class="meta">
+        <div class="row recognize"><span class="tag">Recognise</span><span>${p.recognize}</span></div>
+        <div class="row state"><span class="tag">State</span><span><code>${p.state.split(' = ')[0]}</code> = ${p.state.split(' = ').slice(1).join(' = ')}</span></div>
+        <div class="row"><span class="tag">Cost</span><span class="cx">${p.cx}</span></div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="rungs">
+        ${rungBlock('recur','Recurrence',p.recur,rid)}
+        ${rungBlock('memo','Memoization',p.memo,mid)}
+      </div>
+      <div class="divider">then build bottom-up</div>
+      <div class="rungs">
+        <div class="rung tab full">
+          <div class="rung-head">
+            <span class="rung-label"><span class="bar"></span>Tabulation</span>
+            <button class="copy" data-code="${tid}">copy</button>
+          </div>
+          <pre><code>${highlight(p.tab)}</code></pre>
+        </div>
+      </div>
+      <div class="caveat"><span class="clab">Caveat that bites</span>${p.caveat}</div>
+      ${PROBLEMS[p.id] ? `<div class="problems">
+        <div class="plab">Typical problems &middot; from your Google sheet</div>
+        <div class="chips">${PROBLEMS[p.id].map(q=>`<a class="chip" href="${q.u}" target="_blank" rel="noopener"><span class="d ${q.d}">${q.d}</span>${q.t}<span class="arr">&#8599;</span></a>`).join('')}</div>
+      </div>` : ''}
+    </div>`;
+  cards.appendChild(el);
+  const a=document.createElement('a'); a.href='#'+p.id; a.textContent=`Sec ${n} ${p.name}`; nav.appendChild(a);
+});
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('.copy'); if(!b) return;
+  const code=codeStore[b.dataset.code]; if(code==null) return;
+  navigator.clipboard.writeText(code).then(()=>{
+    b.textContent='copied'; b.classList.add('ok');
+    setTimeout(()=>{b.textContent='copy'; b.classList.remove('ok');},1200);
+  });
+});
+</script>
