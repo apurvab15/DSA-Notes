@@ -536,6 +536,508 @@ int lcsub(String a, String b) {                  int lcsub(String a, String b) {
 
 ---
 
+# Subsequence DP (LIS family)
+
+State is usually **"best ending exactly at index `i`"** (like Kadane / Maximal Square). The recurrence is **loop-inside-step**: to fill `dp[i]`, scan *all* earlier elements you could extend from. Answer is the **max over all cells**, not `dp[n-1]`. Keeps the whole array; O(n²) time (an O(n log n) trick exists for LIS itself).
+
+---
+
+## Longest Increasing Subsequence
+
+**Description:** Given `nums`, return the length of the longest strictly increasing **subsequence** (skips allowed, not contiguous).
+
+**Example:** `nums = [10,9,2,5,3,7,101,18]` → `4`. One LIS is `[2,3,7,101]` (or `[2,5,7,18]`).
+
+**Intuition:** `dp[i]` = length of the longest increasing subsequence **ending exactly at** index `i` (`nums[i]` is its last element). To end at `i`, the previous element must be some earlier, smaller `nums[j]` (`j < i`, `nums[j] < nums[i]`) — and the best chain ending at `j` is already `dp[j]`. So `nums[i]` glues onto the best earlier chain it can legally extend: `dp[i] = 1 + max(dp[j])` over valid `j`, or `1` if none. Answer = max over all `dp[i]` (the longest chain can end anywhere). *Skippable → look back at ALL earlier elements (the inner loop), which is why it's O(n²).*
+
+**Concrete — `dp[4]` for `nums = [3,1,4,2,5]`, computing the element `5` at index 4:** earlier elements smaller than 5 are `3`(dp=1), `1`(dp=1), `4`(dp=2), `2`(dp=2). Each offers to be 5's predecessor: extend the best of them (dp=2) → `dp[4] = 2 + 1 = 3`. (Chains like `[1,4,5]` or `[1,2,5]`.) `5` hunts backward for the longest chain it's allowed to sit on top of.
+
+**Signature to remember:** "ending at `i`" · `dp[i] = 1 + max(dp[j] : j<i, nums[j]<nums[i])` · answer = **max over all cells**.
+
+**Type / knobs:** optimizing (`max`) · loop-inside-step (inner scan over `j<i`) · answer = max over table.
+
+**Time:** O(n²) (DP) · O(n log n) (patience sorting).
+**Space:** O(n) (the `dp` array — doesn't reduce further).
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential-ish)              // ── MEMO ── O(n^2)  (recurrence + cache)
+int lengthOfLIS(int[] nums) {                    int[] memo;
+    int n = nums.length, best = 0;               int lengthOfLIS(int[] nums) {
+    for (int i = 0; i < n; i++)                      int n = nums.length, best = 0;
+        best = Math.max(best,                        memo = new int[n];
+                        solve(nums, i));             Arrays.fill(memo, -1);   // -1 = uncomputed
+    return best;                                     for (int i = 0; i < n; i++)
+}                                                        best = Math.max(best, solve(nums, i));
+                                                     return best;
+int solve(int[] nums, int i) {                   }
+    // LIS ending exactly at i                    int solve(int[] nums, int i) {
+    int len = 1;                                     if (memo[i] != -1) return memo[i];
+    for (int j = 0; j < i; j++)                      int len = 1;
+        if (nums[j] < nums[i])                       for (int j = 0; j < i; j++)
+            len = Math.max(len,                          if (nums[j] < nums[i])
+                           1 + solve(nums, j));              len = Math.max(len, 1 + solve(nums, j));
+    return len;                                      return memo[i] = len;
+}                                                }
+```
+
+### Tabulation ‖ Patience sorting (O(n log n), the clever variant)
+
+```java
+// ── TABULATION O(n^2) ──                          // ── PATIENCE SORTING O(n log n) ──
+int lengthOfLIS(int[] nums) {                    int lengthOfLIS(int[] nums) {
+    int n = nums.length;                             int[] tails = new int[nums.length];
+    int[] dp = new int[n];                           int size = 0;   // length of LIS so far
+    Arrays.fill(dp, 1);  // each alone = 1
+    int best = 1;                                    for (int x : nums) {
+    for (int i = 0; i < n; i++) {                        int lo = 0, hi = size;
+        for (int j = 0; j < i; j++)                      while (lo < hi) {        // first tail >= x
+            if (nums[j] < nums[i])                           int mid = (lo + hi) / 2;
+                dp[i] = Math.max(dp[i], dp[j]+1);            if (tails[mid] < x) lo = mid + 1;
+        best = Math.max(best, dp[i]);                        else hi = mid;
+    }                                                    }
+    return best;                                         tails[lo] = x;   // extend or replace
+}                                                        if (lo == size) size++;
+                                                     }
+                                                     return size;
+                                                 }
+```
+
+**Tips:**
+- **Answer = max over all `dp[i]`, NOT `dp[n-1]`** — the longest chain can end anywhere (same "ending here" trap as Maximal Square / Kadane). #1 LIS mistake.
+- **Strict vs non-strict:** `nums[j] < nums[i]` for *strictly* increasing; use `<=` for non-decreasing. Read the problem carefully (semantics check).
+- **Patience sorting (O(n log n)):** `tails[k]` = smallest possible tail of an increasing subsequence of length `k+1`. For each `x`, binary-search the first tail `>= x` and overwrite it (or append if `x` is bigger than all). The **length of `tails` is the LIS length** — but note `tails` itself is *not* a valid subsequence, just a bookkeeping array. Use "first tail `>= x`" (lower bound) for strict; "first `> x`" (upper bound) for non-decreasing.
+
+**Trick / clever variant:** **patience sorting / binary search → O(n log n)** (shown above). The insight: maintain the smallest tail per subsequence length; a new element either extends the longest pile or improves (lowers) an existing tail.
+
+---
+
+## Russian Doll Envelopes
+
+**Description:** Each envelope is `[width, height]`. Envelope A fits inside B only if **both** `A.width < B.width` and `A.height < B.height` (strict). Return the max number of envelopes you can nest (Russian-doll).
+
+**Example:** `envelopes = [[5,4],[6,4],[6,7],[2,3]]` → `3`. Nesting: `[2,3] → [5,4] → [6,7]`.
+
+**Intuition (LIS in disguise):** It's 2D nesting, but you can collapse one dimension by **sorting**. Sort by **width ascending**; for ties (equal width), sort by **height descending**. After sorting, width is non-decreasing left-to-right, so any strictly-increasing chain of *heights* automatically has strictly-increasing widths too — **except** equal-width pairs, which the descending-height tie-break prevents from both being chosen (their heights go down, so a strictly-increasing height LIS can't pick two of them). So the answer = **LIS on the heights array**.
+
+**Concrete — why height DESC for ties:** take `[3,3]` and `[3,4]` (same width, can't nest).
+- Height *ascending* tie → heights `[3, 4]` → LIS picks both = 2. **WRONG** (they can't nest).
+- Height *descending* tie → heights `[4, 3]` → LIS picks one = 1. **Correct.**
+The descending tie-break is what stops equal-width envelopes from being counted together.
+
+**Signature to remember:** sort width ↑, height ↓ on ties → LIS on heights. The tie-break direction is the whole trick.
+
+**Type / knobs:** optimizing (`max`) · reduces to LIS after sorting · use O(n log n) LIS (n can be large).
+
+**Time:** O(n log n) — sort + patience-sorting LIS.
+**Space:** O(n).
+
+### Solution (sort → LIS on heights, O(n log n))
+
+```java
+int maxEnvelopes(int[][] envelopes) {
+    // width ascending; on equal width, height DESCENDING (so equal widths can't both be chosen)
+    Arrays.sort(envelopes, (a, b) ->
+        a[0] == b[0] ? b[1] - a[1] : a[0] - b[0]);
+
+    // LIS on the heights (patience sorting)
+    int[] tails = new int[envelopes.length];
+    int size = 0;
+    for (int[] e : envelopes) {
+        int h = e[1];
+        int lo = 0, hi = size;
+        while (lo < hi) {                 // first tail >= h  (strict increase)
+            int mid = (lo + hi) / 2;
+            if (tails[mid] < h) lo = mid + 1;
+            else hi = mid;
+        }
+        tails[lo] = h;
+        if (lo == size) size++;
+    }
+    return size;
+}
+```
+
+**Tips:**
+- **The tie-break is the whole problem.** Width ascending is obvious; height *descending* on equal widths is the subtle part — it prevents equal-width envelopes (which can't nest) from forming a fake increasing height run.
+- After sorting, you've reduced a 2D nesting problem to plain **LIS on heights** — a clean example of "reduce to a known problem by removing a dimension via sorting."
+- Use the **O(n log n) LIS** here (patience sorting), since envelope counts can be large; the O(n²) LIS may TLE.
+
+**Trick / clever variant:** **sort to collapse one dimension, then LIS on the other.** The reduce-to-known move (like LPS = LCS(s, reverse(s))) — recognizing "this is LIS wearing a 2D costume" is the insight.
+
+---
+
+# Kadane / Contiguous Subarray DP
+
+The *contiguous* cousin of LIS. State: `dp[i]` = "best subarray **ending exactly at** `i`." At each element, **extend** the previous run or **restart** fresh. Answer = **max over all cells** (best run can end anywhere). Space-optimizes to O(1) (one running variable) — that O(1) form *is* Kadane's algorithm.
+
+**Contrast with LIS:** LIS is *subsequence* (skips allowed → look back at all `j<i` → O(n²)); Kadane is *subarray* (contiguous → only look at the immediately previous run → O(n)).
+
+---
+
+## Maximum Subarray (Kadane)
+
+**Description:** Given `nums`, find the contiguous subarray with the largest sum and return that sum.
+
+**Example:** `nums = [-2,1,-3,4,-1,2,1,-5,4]` → `6`. The subarray `[4,-1,2,1]` sums to 6.
+
+**Intuition:** `dp[i]` = max sum of a subarray **ending at** `i`. Ending at `i`, you either **extend** the best run ending at `i-1` (`nums[i] + dp[i-1]`) or **restart** at `i` alone (`nums[i]`) — you restart whenever the previous run was negative (a drag). So `dp[i] = max(nums[i], nums[i] + dp[i-1])`. Answer = max over all `dp[i]` (best subarray can end anywhere).
+
+**Concrete — for `nums = [-2,1,-3,4,-1,2,1,-5,4]`:**
+- `dp[3]` (value 4): `max(4, 4 + dp[2]) = max(4, 4 + (-2)) = 4` → **restart** (previous run was negative).
+- `dp[5]` (value 2): `max(2, 2 + dp[4]) = max(2, 2 + 3) = 5` → **extend** (previous run helped).
+- Full `dp`: `-2, 1, -2, 4, 3, 5, 6, 1, 5` → max is `6`.
+
+**Signature to remember:** `dp[i] = max(nums[i], nums[i] + dp[i-1])` (restart vs extend); answer = **max over all cells**.
+
+**Type / knobs:** optimizing (`max`) · "ending at i" · answer = max over table.
+
+**Time:** O(n) (every rung).
+**Space:** memo/tabulation O(n) · space-optimized O(1) (this is Kadane's algorithm).
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ──                                // ── MEMO ── O(n)
+int maxSubArray(int[] nums) {                    Integer[] memo;
+    int best = Integer.MIN_VALUE;                int maxSubArray(int[] nums) {
+    for (int i = 0; i < nums.length; i++)            memo = new Integer[nums.length];
+        best = Math.max(best, solve(nums, i));       int best = Integer.MIN_VALUE;
+    return best;                                     for (int i = 0; i < nums.length; i++)
+}                                                        best = Math.max(best, solve(nums, i));
+                                                     return best;
+int solve(int[] nums, int i) {                   }
+    // max sum ending at i                        int solve(int[] nums, int i) {
+    if (i == 0) return nums[0];                      if (i == 0) return nums[0];
+    return Math.max(nums[i],                         if (memo[i] != null) return memo[i];  // hit
+                    nums[i] + solve(nums, i-1));     return memo[i] = Math.max(nums[i],
+}                                                            nums[i] + solve(nums, i-1));
+                                                 }
+```
+
+### Tabulation ‖ Space-optimized (= Kadane)
+
+```java
+// ── TABULATION ──                                // ── SPACE-OPTIMIZED (Kadane's algorithm) ──
+int maxSubArray(int[] nums) {                    int maxSubArray(int[] nums) {
+    int n = nums.length;                             int cur = nums[0], best = nums[0];
+    int[] dp = new int[n];                           for (int i = 1; i < nums.length; i++) {
+    dp[0] = nums[0];                                     cur = Math.max(nums[i], nums[i] + cur);
+    int best = dp[0];                                    best = Math.max(best, cur);
+    for (int i = 1; i < n; i++) {                    }
+        dp[i] = Math.max(nums[i], nums[i]+dp[i-1]);  return best;
+        best = Math.max(best, dp[i]);            }
+    }
+    return best;
+}
+```
+
+**Tips:**
+- **Answer = max over all cells, NOT `dp[n-1]`** — the best subarray can end anywhere (same "ending here" trap as LIS / Maximal Square).
+- Seed `best = nums[0]` (not 0) — handles all-negative arrays correctly (the answer is the largest single element).
+- The space-opt (`cur = max(nums[i], nums[i]+cur)`) *is* Kadane's algorithm — restart vs extend in one variable.
+
+**Trick / clever variant:** the space-optimized form *is* the famous **Kadane's algorithm**. For the *circular* variant (Max Sum Circular Subarray), the answer is `max(normal Kadane, total − minKadane)` — the wrap-around case is total minus the minimum subarray.
+
+---
+
+## Maximum Product Subarray  *(two-state twist)*
+
+**Description:** Given `nums`, find the contiguous subarray with the largest **product** and return it.
+
+**Example:** `nums = [2,3,-2,4]` → `6`. The subarray `[2,3]` has product 6.
+
+**Intuition:** Like Kadane, but you must track **two** states ending at `i`: the **max** product AND the **min** product. Why? A negative number **flips** them — multiplying a large *negative* min by another negative yields a large *positive* max. So `maxEnd` and `minEnd` each consider three options: start fresh (`nums[i]`), extend the max (`nums[i]*maxEnd`), or extend the min (`nums[i]*minEnd`). Answer = max over all `maxEnd`.
+
+> `maxEnd = max(x, x*maxEnd, x*minEnd)` · `minEnd = min(x, x*maxEnd, x*minEnd)`
+
+**Concrete — the flip, for `nums = [-2, 3, -4]`:**
+- i=0: `maxEnd = -2`, `minEnd = -2`.
+- i=1 (3): `maxEnd = max(3, -6, -6) = 3`; `minEnd = min(3, -6, -6) = -6`.
+- i=2 (-4): `maxEnd = max(-4, 3·-4=-12, -6·-4=**24**) = 24`. The stored *min* (`-6`) became the max when multiplied by the negative `-4`. **This is why you track min.** Answer = 24.
+
+**Signature to remember:** track BOTH max and min ending at `i` (negatives flip them); each = best of {start fresh, ×max, ×min}.
+
+**Type / knobs:** optimizing (`max`) · "ending at i" · **two states per cell** (max + min) · answer = max over maxEnd.
+
+**Time:** O(n).
+**Space:** tabulation O(n) (two arrays) · space-optimized O(1) (a few vars).
+
+### Tabulation ‖ Space-optimized
+
+```java
+// ── TABULATION (two arrays) ──                    // ── SPACE-OPTIMIZED (a few vars) ──
+int maxProduct(int[] nums) {                     int maxProduct(int[] nums) {
+    int n = nums.length;                             int maxE = nums[0], minE = nums[0];
+    int[] mx = new int[n], mn = new int[n];          int best = nums[0];
+    mx[0] = mn[0] = nums[0];                         for (int i = 1; i < nums.length; i++) {
+    int best = nums[0];                                  int x = nums[i];
+    for (int i = 1; i < n; i++) {                        int mE = Math.max(x,
+        int x = nums[i];                                        Math.max(x*maxE, x*minE));
+        mx[i] = Math.max(x,                              int nE = Math.min(x,
+                Math.max(x*mx[i-1], x*mn[i-1]));                 Math.min(x*maxE, x*minE));
+        mn[i] = Math.min(x,                              maxE = mE; minE = nE;   // update together
+                Math.min(x*mx[i-1], x*mn[i-1]));         best = Math.max(best, maxE);
+        best = Math.max(best, mx[i]);                }
+    }                                                return best;
+    return best;                                 }
+}
+```
+
+**Tips:**
+- **Track min too** — a negative flips min↔max. This "carry two states because one can become the other" is the transferable idea (shows up wherever sign/parity/direction can invert your optimum).
+- **Update `maxE` and `minE` together** (compute both from the *old* values before overwriting) — using an already-updated `maxE` to compute `minE` is the classic bug.
+- Recurrence/memo form is awkward (two interdependent states per index), so tabulation is the natural primary form.
+
+**Trick / clever variant:** none — but the "two-state" idea generalizes: whenever an operation can flip your best into your worst (negatives, direction changes), carry both extremes forward.
+
+---
+
+# Unbounded Knapsack
+
+Each item can be used **unlimited times** (0, 1, 2, … copies). Signature move: when you "use" an item you **stay on the same item** (can reuse it), unlike 0/1 knapsack where taking an item moves you past it. The recurrence is **loop-inside-step** (loop over items/coins). Reach-back distance varies (any item value), so it **keeps the whole array** — no rolling-variable collapse.
+
+**Knob checklist for this family:** *type?* (min/count/feasible → operator) · *item reuse?* unlimited (stay on item) · *order matter?* (combinations vs permutations → loop nesting).
+
+---
+
+## Coin Change  *(min coins — optimizing)*
+
+**Description:** Given coin denominations `coins` and a `amount`, return the **fewest coins** that sum to `amount`, or `-1` if impossible. Unlimited coins of each type.
+
+**Example:** `coins = [1,2,5]`, `amount = 11` → `3` (5 + 5 + 1).
+
+**Intuition:** `dp[a]` = fewest coins to make amount `a`. The choice is "which coin do I use *last*?" — one option per coin. Using coin `c` means: one coin now (`+1`) plus the best way to make the leftover `a - c` (already solved). Try every coin, take the min:
+
+> `dp[a] = min over coins c (c ≤ a) of ( dp[a - c] + 1 )`
+
+Base case `dp[0] = 0` (zero coins make amount 0). "Impossible" needs an explicit sentinel (there's no valid min) — use a big value and translate to `-1` at the end.
+
+**Concrete — `dp[6]` for `coins = [1,2,5]`** (say `dp[5]=1, dp[4]=2, dp[1]=1` already known):
+- use coin 1 → `dp[5] + 1 = 1 + 1 = 2`
+- use coin 2 → `dp[4] + 1 = 2 + 1 = 3`
+- use coin 5 → `dp[1] + 1 = 1 + 1 = 2`
+
+Take the min → `dp[6] = 2` (e.g. 5 + 1). Each coin proposes "spend one of me + cheapest way to make the rest"; min keeps the best.
+
+**Signature to remember:** optimizing → `min`, base `dp[0]=0`; loop over coins; impossible → sentinel → `-1`.
+
+**Type / knobs:** optimizing (`min`) · unbounded (reuse coins) · loop-inside-step · keeps whole array.
+
+**Time:** O(amount × coins).
+**Space:** O(amount) (the `dp` array — doesn't collapse; reach-back varies by coin value).
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(amount·coins)
+int coinChange(int[] coins, int amount) {        Integer[] memo;
+    int r = dfs(coins, amount);                  int coinChange(int[] coins, int amount) {
+    return r == Integer.MAX_VALUE ? -1 : r;          memo = new Integer[amount + 1];
+}                                                    int r = dfs(coins, amount);
+                                                     return r == Integer.MAX_VALUE ? -1 : r;
+int dfs(int[] coins, int a) {                    }
+    if (a == 0) return 0;                         int dfs(int[] coins, int a) {
+    if (a < 0) return Integer.MAX_VALUE; // dead      if (a == 0) return 0;
+                                                     if (a < 0) return Integer.MAX_VALUE;
+    int best = Integer.MAX_VALUE;                    if (memo[a] != null) return memo[a];   // hit
+    for (int c : coins) {                            int best = Integer.MAX_VALUE;
+        int sub = dfs(coins, a - c);                 for (int c : coins) {
+        if (sub != Integer.MAX_VALUE)                    int sub = dfs(coins, a - c, memo);
+            best = Math.min(best, sub + 1);              if (sub != Integer.MAX_VALUE)
+    }                                                        best = Math.min(best, sub + 1);
+    return best;                                      }
+}                                                    return memo[a] = best;
+                                                 }
+```
+
+### Tabulation  *(no clean space-opt — reach-back varies by coin value)*
+
+```java
+int coinChange(int[] coins, int amount) {
+    int[] dp = new int[amount + 1];
+    Arrays.fill(dp, amount + 1);        // "impossible" sentinel (bigger than any real answer)
+    dp[0] = 0;                          // base case
+
+    for (int a = 1; a <= amount; a++) {         // fill low -> high
+        for (int c : coins) {                   // loop-inside-step over coins
+            if (c <= a)
+                dp[a] = Math.min(dp[a], dp[a - c] + 1);
+        }
+    }
+    return dp[amount] > amount ? -1 : dp[amount];
+}
+```
+
+**Tips:**
+- **Impossible sentinel:** fill with `amount + 1` (no real answer exceeds `amount`), not `MAX_VALUE` — avoids overflow on the `+1`. Final check `dp[amount] > amount` → `-1`.
+- **Nested loop** (amounts outer, coins inner) is the loop-inside-step signature. Order doesn't matter here (counting *coins*, not combinations), so either nesting works.
+- **No space-opt to O(1):** `dp[a]` can reach back by *any* coin value, so you need the whole array — the defining trait of this family vs. the rolling-variable 1D problems.
+- Memo sentinel: `Integer[]`/`null` (a real answer can be 0, and `MAX_VALUE` is a real "impossible" value you cache).
+
+**Trick / clever variant:** none — but note it's a **BFS** in disguise (shortest path over reachable amounts). Min-coins = fewest edges to reach `amount` from 0.
+
+---
+
+## Coin Change II  *(count ways — counting)*
+
+**Description:** Given `coins` and an `amount`, return the **number of distinct combinations** that sum to `amount`. Unlimited coins. `{1,2}` and `{2,1}` are the **same** combination (count once).
+
+**Example:** `coins = [1,2,5]`, `amount = 5` → `4`: `{5}`, `{1,1,1,2}`, `{1,2,2}`, `{1,1,1,1,1}`.
+
+**Intuition:** counting, so combine with `+` and base case `1`. The **trap** is combinations vs permutations — `{1,2}` and `{2,1}` must count once. The 2D recurrence makes this explicit: `dfs(i, a)` = ways to make `a` using coins from index `i` onward. Two choices: **skip** coin `i` (move to `i+1`) or **use** coin `i` (stay on `i`, since unlimited). Sum them.
+
+> `dfs(i, a) = dfs(i+1, a)  +  dfs(i, a - coins[i])`
+
+Base cases: `a == 0` → 1 (one way — take nothing more); `a < 0` or `i == n` → 0. The coin index only moves *forward* (skip advances, use stays) — that one-directional movement enforces a fixed coin order, so no permutation double-counting.
+
+**Concrete — `dfs(coin1, amt3)` for `coins=[1,2]`, amount 3:**
+- **skip coin 1** → `dfs(coin2, amt3)`: only coin 2 left → makes 3? no (2 doesn't divide into 3 cleanly with one coin type)… `2→ dfs(coin2,1)→` dead → 0 ways via pure 2s.
+- **use coin 1** → `dfs(coin1, amt2)`: keep using coin 1 → leads to `{1,1,1}` and `{1,2}`.
+
+Total = 2 ways: `{1,1,1}` and `{1,2}`. Note `{2,1}` never appears — using coin 2 requires having *skipped* coin 1 first, so coin 1 can't come after coin 2.
+
+**Signature to remember:** counting → `+`, base `1`; 2D state `(coin index, amount)`; skip advances `i`, use stays on `i`. 1D collapse = "coins on the OUTER loop."
+
+**Type / knobs:** counting (`+`) · unbounded · **combinations** (coins-outer loop) · impossible → 0 (free, no sentinel).
+
+**Time:** O(amount × coins).
+**Space:** O(amount × coins) memo · O(amount) 1D.
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(amount·coins)  2D state (i, a)
+int change(int amount, int[] coins) {            Integer[][] memo;
+    return dfs(0, amount, coins);                int change(int amount, int[] coins) {
+}                                                    memo = new Integer[coins.length][amount + 1];
+                                                     return dfs(0, amount, coins);
+int dfs(int i, int a, int[] coins) {             }
+    if (a == 0) return 1;   // one way            int dfs(int i, int a, int[] coins) {
+    if (a < 0) return 0;                             if (a == 0) return 1;
+    if (i == coins.length) return 0;                 if (a < 0) return 0;
+                                                     if (i == coins.length) return 0;
+    int skip = dfs(i+1, a, coins);                   if (memo[i][a] != null) return memo[i][a]; //hit
+    int use  = dfs(i, a - coins[i], coins);          int skip = dfs(i+1, a, coins, memo);
+    return skip + use;                               int use  = dfs(i, a - coins[i], coins, memo);
+}                                                    return memo[i][a] = skip + use;
+                                                 }
+```
+
+### Tabulation ‖ Space-optimized (1D, coins-outer)
+
+```java
+// ── TABULATION (2D) ──                            // ── SPACE-OPTIMIZED (1D) — coins OUTER ──
+int change(int amount, int[] coins) {            int change(int amount, int[] coins) {
+    int n = coins.length;                            int[] dp = new int[amount + 1];
+    int[][] dp = new int[n + 1][amount + 1];         dp[0] = 1;   // one way to make 0
+    for (int i=0;i<=n;i++) dp[i][0]=1; // amt0=1
+                                                     for (int c : coins) {          // coins OUTER
+    for (int i = 1; i <= n; i++) {                       for (int a = c; a <= amount; a++) {
+        for (int a = 0; a <= amount; a++) {                  dp[a] += dp[a - c];    // add ways using c
+            dp[i][a] = dp[i-1][a];  // skip              }
+            if (a >= coins[i-1])                     }
+                dp[i][a] += dp[i][a-coins[i-1]];     return dp[amount];
+        }                                        }
+    }
+    return dp[n][amount];
+}
+```
+
+**Tips:**
+- **Coins on the OUTER loop** (1D version) is the crux — it processes one coin fully before the next, so each combination is built in a fixed coin order → no permutation double-counting. Flipping to amount-outer would count *permutations* (that's Combination Sum IV).
+- **Impossible is free:** if an amount can't be made, its count is just `0` — no sentinel needed (counting handles "no solution" naturally, unlike optimizing).
+- 2D memo state is `(coin index, amount)` — the coin dimension is *why* no double-counting; it collapses to 1D via the outer coin loop.
+- Contrast Coin Change I: there order didn't matter (counting coins), so loop nesting was free; here order matters (counting combinations), so nesting is fixed.
+
+**Trick / clever variant:** the **coins-outer loop order** is the clever bit — it's what turns "count sequences" into "count sets." Recognizing combinations-vs-permutations decides the loop nesting.
+
+---
+
+# 0/1 Knapsack
+
+Each item is used **at most once** (0 or 1 copies). Signature move: when you "take" an item you **move past it** (to `i-1`/`i+1`), unlike unbounded where you stay. State is 2D: `dp[i][budget]` = best/count/feasible using the first `i` items for a given budget/target.
+
+**Knob checklist:** *type?* (min/count/feasible → operator) · *item reuse?* **once** (take → move past item) · *(1D space-opt only)* iterate the budget **backward** (high→low) so an item isn't reused within one pass — the famous 0/1 gotcha.
+
+---
+
+## Partition Equal Subset Sum
+
+**Description:** Given `nums`, return `true` if the array can be split into two subsets with **equal sum**.
+
+**Example:** `nums = [1,5,11,5]` → `true`. Split `{11}` and `{1,5,5}`, both sum to 11.
+
+**Intuition (the reduction):** Two equal halves means each sums to `total/2`. But you only need to find **one** subset summing to `total/2` — the leftover *automatically* sums to `total/2` too (they're complements). So it reduces to: **"can a subset sum to exactly `total/2`?"** If `total` is odd → immediately `false`. It's a *feasibility* 0/1 knapsack: `dp[i][t]` = "can I make sum `t` using the first `i` numbers?", combine with `OR`, base `dp[i][0] = true` (sum 0 = pick nothing).
+
+**Concrete — `dp[i][t]` choice for number `nums[i-1]`:** can I make sum `t` from the first `i` numbers?
+- **skip** it → can I make `t` from the first `i-1`? → `dp[i-1][t]`
+- **take** it (if `t >= nums[i-1]`) → can I make the leftover `t - nums[i-1]` from the first `i-1`? → `dp[i-1][t - nums[i-1]]`
+
+`OR` them: reachable if *either* works. (Take moves to `i-1` — past the item — enforcing "each used once.")
+
+**Signature to remember:** reduce to "subset sums to `total/2`?"; odd total → false; feasibility `OR`, base `true`; take → move past item.
+
+**Type / knobs:** feasibility (`OR`) · 0/1 (each number once) · target = `total/2` · impossible → just `false`.
+
+**Time:** O(n × target) where target = total/2.
+**Space:** memo/tabulation O(n × target) · space-optimized O(target) 1D.
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(n·target)  2D state (i, t)
+boolean canPartition(int[] nums) {               Boolean[][] memo;
+    int sum = 0; for (int x : nums) sum += x;     boolean canPartition(int[] nums) {
+    if (sum % 2 != 0) return false;                   int sum = 0; for (int x : nums) sum += x;
+    return dfs(nums, 0, sum / 2);                     if (sum % 2 != 0) return false;
+}                                                     memo = new Boolean[nums.length][sum/2 + 1];
+                                                      return dfs(nums, 0, sum / 2);
+boolean dfs(int[] nums, int i, int t) {          }
+    if (t == 0) return true;   // made target     boolean dfs(int[] nums, int i, int t) {
+    if (i == nums.length || t < 0)                    if (t == 0) return true;
+        return false;                                 if (i == nums.length || t < 0) return false;
+    // skip i-th  OR  take i-th (move past)            if (memo[i][t] != null) return memo[i][t]; //hit
+    return dfs(nums, i+1, t) ||                       return memo[i][t] =
+           dfs(nums, i+1, t - nums[i]);                   dfs(nums, i+1, t, memo) ||
+}                                                            dfs(nums, i+1, t - nums[i], memo);
+                                                 }
+```
+
+### Tabulation ‖ Space-optimized (1D — iterate target BACKWARD)
+
+```java
+// ── TABULATION (2D) ──                            // ── SPACE-OPTIMIZED (1D, target backward) ──
+boolean canPartition(int[] nums) {               boolean canPartition(int[] nums) {
+    int sum = 0; for (int x:nums) sum += x;          int sum = 0; for (int x:nums) sum += x;
+    if (sum % 2 != 0) return false;                  if (sum % 2 != 0) return false;
+    int T = sum / 2, n = nums.length;                int T = sum / 2;
+    boolean[][] dp = new boolean[n+1][T+1];          boolean[] dp = new boolean[T + 1];
+    for (int i=0;i<=n;i++) dp[i][0]=true; //sum0     dp[0] = true;   // sum 0 always reachable
+
+    for (int i = 1; i <= n; i++) {                   for (int x : nums) {
+        for (int t = 0; t <= T; t++) {                   for (int t = T; t >= x; t--) {  // BACKWARD
+            dp[i][t] = dp[i-1][t];  // skip                  dp[t] = dp[t] || dp[t - x];
+            if (t >= nums[i-1])                          }
+                dp[i][t] = dp[i][t]                  }
+                    || dp[i-1][t-nums[i-1]]; //take  return dp[T];
+        }                                        }
+    }
+    return dp[n][T];
+}
+```
+
+**Tips:**
+- **The reduction is the insight:** "partition into two equal halves" → "does a subset sum to `total/2`?" (the other half is forced). Odd total → instantly false.
+- **1D space-opt iterates the target BACKWARD** (`t` from `T` down to `x`). This is *the* 0/1 gotcha: going forward would let the same number be added twice in one pass (turning it into unbounded knapsack). Backward guarantees each item is used at most once.
+- Feasibility handles "impossible" for free — the answer is just `false`, no sentinel.
+- **Set trick:** since it's feasibility, a `Set<Integer>` of reachable sums works instead of the boolean array (store only the `true` cells). Only valid for *feasibility* types (not min/count).
+
+**Trick / clever variant:** **set-of-reachable-sums** — maintain a `Set` of achievable subset sums, expanding by each number; if `total/2` appears, return true. Compact form of feasibility DP. (Also: **Target Sum** reduces here — "assign ± to hit target" becomes "count subsets summing to `(target+total)/2`", a *counting* 0/1 knapsack.)
+
+---
+
 # Interval DP
 
 **Defining trait:** `dp[i][j]` describes a **range `[i, j]`**, and depends on **smaller ranges inside/around it** — so you fill by **increasing range length** (shortest ranges first), NOT the prefix row-by-row order. Base cases are the length-1 (or empty) ranges.
@@ -827,378 +1329,256 @@ int maxCoins(int[] nums) {
 
 **Trick / clever variant:** the reframe *is* the trick — **fix the LAST balloon burst**, so its neighbours are the fixed range boundaries and the two sub-ranges become independent. This "reason about the last operation" move is the signature of hard split-point interval DP; if "first" won't decompose cleanly, try "last."
 
----
-
-# Subsequence DP (LIS family)
-
-State is usually **"best ending exactly at index `i`"** (like Kadane / Maximal Square). The recurrence is **loop-inside-step**: to fill `dp[i]`, scan *all* earlier elements you could extend from. Answer is the **max over all cells**, not `dp[n-1]`. Keeps the whole array; O(n²) time (an O(n log n) trick exists for LIS itself).
 
 ---
 
-## Longest Increasing Subsequence
+# Stock Trading DP (state machine)
 
-**Description:** Given `nums`, return the length of the longest strictly increasing **subsequence** (skips allowed, not contiguous).
+Every "Best Time to Buy and Sell Stock" variant is one **state machine**: on each day you're either **holding** a share or **in cash**, and you move between those states by buying / selling / doing nothing. State: `dp[i][holding]` (+ a transaction-count dimension when transactions are capped). Fill day by day; almost all of these **space-optimize to a few variables** (you only need yesterday's states).
 
-**Example:** `nums = [10,9,2,5,3,7,101,18]` → `4`. One LIS is `[2,3,7,101]` (or `[2,5,7,18]`).
+**The two base states** (unlimited-transaction version):
+- `cash` = max profit today holding **no** share.
+- `hold` = max profit today holding **a** share (profit is negative right after buying).
 
-**Intuition:** `dp[i]` = length of the longest increasing subsequence **ending exactly at** index `i` (`nums[i]` is its last element). To end at `i`, the previous element must be some earlier, smaller `nums[j]` (`j < i`, `nums[j] < nums[i]`) — and the best chain ending at `j` is already `dp[j]`. So `nums[i]` glues onto the best earlier chain it can legally extend: `dp[i] = 1 + max(dp[j])` over valid `j`, or `1` if none. Answer = max over all `dp[i]` (the longest chain can end anywhere). *Skippable → look back at ALL earlier elements (the inner loop), which is why it's O(n²).*
+**Transitions (per day, price `p`):**
+- `cash = max(cash, hold + p)` — stay in cash, or **sell** today.
+- `hold = max(hold, cash − p)` — keep holding, or **buy** today.
 
-**Concrete — `dp[4]` for `nums = [3,1,4,2,5]`, computing the element `5` at index 4:** earlier elements smaller than 5 are `3`(dp=1), `1`(dp=1), `4`(dp=2), `2`(dp=2). Each offers to be 5's predecessor: extend the best of them (dp=2) → `dp[4] = 2 + 1 = 3`. (Chains like `[1,4,5]` or `[1,2,5]`.) `5` hunts backward for the longest chain it's allowed to sit on top of.
+Answer is always `cash` at the end (never end holding — an unsold share is wasted). Each variant just tweaks: how many transactions, and whether buying/selling has extra rules (cooldown, fee).
 
-**Signature to remember:** "ending at `i`" · `dp[i] = 1 + max(dp[j] : j<i, nums[j]<nums[i])` · answer = **max over all cells**.
+**Knob checklist:** *how many transactions?* (1 / unlimited / k) · *extra rule?* (cooldown after sell / fee per transaction) · *greedy shortcut?* (only for unlimited-transaction variants).
 
-**Type / knobs:** optimizing (`max`) · loop-inside-step (inner scan over `j<i`) · answer = max over table.
+---
 
-**Time:** O(n²) (DP) · O(n log n) (patience sorting).
-**Space:** O(n) (the `dp` array — doesn't reduce further).
+## Best Time to Buy and Sell Stock I  *(one transaction)*
 
-### Recurrence ‖ Memo
+**Description:** One buy and one sell (buy before sell). Maximize profit; 0 if none.
+
+**Example:** `prices = [7,1,5,3,6,4]` → `5` (buy at 1, sell at 6).
+
+**Intuition:** With exactly one transaction, `dp[i][hold]` = best having bought once by day `i`; `dp[i][cash]` = best having sold. But the classic one-pass is cleaner: track the **min price so far**, and the best profit is `max(price − minSoFar)` over all days. (You buy at the lowest price seen, sell today.)
+
+**Concrete — `prices = [7,1,5,3,6,4]`:** minSoFar goes `7,1,1,1,1,1`; profit each day `0,0,4,2,5,3` → best `5` (day price 6 − min 1).
+
+**Signature to remember:** one transaction → track min-price-so-far, `best = max(best, price − min)`. (Or DP: `hold = max(hold, −p)`, `cash = max(cash, hold + p)`.)
+
+**Type / knobs:** optimizing (`max`) · 1 transaction · greedy one-pass available.
+
+**Time:** O(n).  **Space:** O(1).
+
+### Recurrence ‖ Memo  (state = day `i`, `holding` 0/1)
 
 ```java
-// ── RECURRENCE ── (exponential-ish)              // ── MEMO ── O(n^2)  (recurrence + cache)
-int lengthOfLIS(int[] nums) {                    int[] memo;
-    int n = nums.length, best = 0;               int lengthOfLIS(int[] nums) {
-    for (int i = 0; i < n; i++)                      int n = nums.length, best = 0;
-        best = Math.max(best,                        memo = new int[n];
-                        solve(nums, i));             Arrays.fill(memo, -1);   // -1 = uncomputed
-    return best;                                     for (int i = 0; i < n; i++)
-}                                                        best = Math.max(best, solve(nums, i));
-                                                     return best;
-int solve(int[] nums, int i) {                   }
-    // LIS ending exactly at i                    int solve(int[] nums, int i) {
-    int len = 1;                                     if (memo[i] != -1) return memo[i];
-    for (int j = 0; j < i; j++)                      int len = 1;
-        if (nums[j] < nums[i])                       for (int j = 0; j < i; j++)
-            len = Math.max(len,                          if (nums[j] < nums[i])
-                           1 + solve(nums, j));              len = Math.max(len, 1 + solve(nums, j));
-    return len;                                      return memo[i] = len;
-}                                                }
+// ── RECURRENCE ──                                // ── MEMO ── O(n)
+int maxProfit(int[] p) {                         Integer[][] memo;
+    return dfs(p, 0, 0);                         int maxProfit(int[] p) {
+}                                                    memo = new Integer[p.length][2];
+                                                     return dfs(p, 0, 0);
+int dfs(int[] p, int i, int hold) {              }
+    if (i == p.length) return 0;                  int dfs(int[] p, int i, int hold) {
+    if (hold == 0)                                   if (i == p.length) return 0;
+        return Math.max(dfs(p, i+1, 0),              if (memo[i][hold] != null) return memo[i][hold];
+                        -p[i] + dfs(p, i+1, 1));     int res;
+    else // holding -> sell (then done) or hold      if (hold == 0)                 // in cash
+        return Math.max(dfs(p, i+1, 1),                  res = Math.max(dfs(p,i+1,0),      // skip
+                        p[i] + dfs(p, i+1, 0));                         -p[i]+dfs(p,i+1,1)); // buy
+}   // note: for ONE txn, once sold you can't      else                           // holding
+    // rebuy — enforce with a 3rd "done" flag,          res = Math.max(dfs(p,i+1,1),      // hold
+    // or just use the min-price one-pass below.                        p[i]+dfs(p,i+1,0)); // sell
+                                                     return memo[i][hold] = res;
+                                                 }
+```
+*(For strict one-transaction, the min-price one-pass is cleaner than the DP — the DP above generalizes to unlimited transactions unless you add a "no rebuy" flag.)*
+
+### Tabulation ‖ Space-optimized (min-price one-pass — the "greedy")
+
+```java
+// ── TABULATION (state machine) ──                // ── SPACE-OPTIMIZED (min-price one-pass) ──
+int maxProfit(int[] p) {                         int maxProfit(int[] p) {
+    int n = p.length;                                int minPrice = Integer.MAX_VALUE, best = 0;
+    int hold = -p[0], cash = 0;                      for (int price : p) {
+    for (int i = 1; i < n; i++) {                        minPrice = Math.min(minPrice, price);
+        cash = Math.max(cash, hold + p[i]); //sell      best = Math.max(best, price - minPrice);
+        hold = Math.max(hold, -p[i]);       //buy1   }
+    }                                                return best;
+    return cash;                                 }
+}
+// hold = -p[i] (NOT cash - p[i]) enforces one buy
 ```
 
-### Tabulation ‖ Patience sorting (O(n log n), the clever variant)
+**Tips:**
+- **One transaction → `hold = max(hold, −p[i])`** (buying resets from 0 profit, not from accumulated cash). Using `cash − p[i]` would allow *unlimited* transactions (that's Stock II).
+- The **min-price one-pass** is the cleanest solution and the one to write in an interview.
+
+**Trick / clever variant:** min-price one-pass (above) — track the lowest buy price seen, best profit is today's price minus it.
+
+---
+
+## Best Time to Buy and Sell Stock II  *(unlimited transactions)*
+
+**Description:** As many transactions as you like (buy/sell repeatedly, but hold at most one share). Maximize profit.
+
+**Example:** `prices = [7,1,5,3,6,4]` → `7` (buy 1 sell 5 = 4, buy 3 sell 6 = 3).
+
+**Intuition:** Unlimited transactions → the state machine's `hold` can rebuy from accumulated `cash`. But the **greedy** is the famous shortcut: **sum every positive day-to-day rise**. Any longer profitable run decomposes into consecutive up-steps, so grabbing every `prices[i] − prices[i-1] > 0` captures the same total.
+
+**Concrete — `[7,1,5,3,6,4]`:** diffs `−6,+4,−2,+3,−2`. Sum the positives: `4 + 3 = 7`.
+
+**Signature to remember:** unlimited → greedy `sum of max(0, p[i] − p[i-1])`. (Or DP: `cash = max(cash, hold+p)`, `hold = max(hold, cash−p)`.)
+
+**Type / knobs:** optimizing (`max`) · unlimited transactions · **greedy shortcut available**.
+
+**Time:** O(n).  **Space:** O(1).
+
+### Tabulation (state machine) ‖ Greedy (sum positive diffs)
 
 ```java
-// ── TABULATION O(n^2) ──                          // ── PATIENCE SORTING O(n log n) ──
-int lengthOfLIS(int[] nums) {                    int lengthOfLIS(int[] nums) {
-    int n = nums.length;                             int[] tails = new int[nums.length];
-    int[] dp = new int[n];                           int size = 0;   // length of LIS so far
-    Arrays.fill(dp, 1);  // each alone = 1
-    int best = 1;                                    for (int x : nums) {
-    for (int i = 0; i < n; i++) {                        int lo = 0, hi = size;
-        for (int j = 0; j < i; j++)                      while (lo < hi) {        // first tail >= x
-            if (nums[j] < nums[i])                           int mid = (lo + hi) / 2;
-                dp[i] = Math.max(dp[i], dp[j]+1);            if (tails[mid] < x) lo = mid + 1;
-        best = Math.max(best, dp[i]);                        else hi = mid;
-    }                                                    }
-    return best;                                         tails[lo] = x;   // extend or replace
-}                                                        if (lo == size) size++;
+// ── STATE MACHINE (space-optimized) ──            // ── GREEDY (sum positive diffs) ──
+int maxProfit(int[] p) {                         int maxProfit(int[] p) {
+    int cash = 0, hold = -p[0];                      int profit = 0;
+    for (int i = 1; i < p.length; i++) {             for (int i = 1; i < p.length; i++)
+        cash = Math.max(cash, hold + p[i]); //sell       if (p[i] > p[i-1])
+        hold = Math.max(hold, cash - p[i]); //buy            profit += p[i] - p[i-1];
+    }                                                return profit;
+    return cash;                                 }
+}
+// hold = cash - p[i] (rebuy from cash) = unlimited
+```
+
+**Tips:**
+- The one line that separates I from II: **`hold = max(hold, cash − p[i])`** (rebuy from accumulated cash) vs I's `−p[i]`. That's the whole difference.
+- **Greedy** is the interview answer here — sum every positive step. It works *only* for the unlimited case.
+
+**Trick / clever variant:** greedy — sum all positive consecutive differences.
+
+---
+
+## Best Time to Buy and Sell Stock III & IV  *(at most k transactions)*
+
+**Description:** At most **k** transactions (III is the special case k = 2). Maximize profit.
+
+**Example (III, k=2):** `prices = [3,3,5,0,0,3,1,4]` → `6` (buy 0 sell 3, buy 1 sell 4).
+
+**Intuition:** Add a **transaction-count dimension**: `dp[t][hold]` = best profit with at most `t` transactions remaining and current holding state. Same buy/sell transitions, but buying (or selling — pick one consistently) **consumes a transaction**. Count a transaction on buy: `hold[t] = max(hold[t], cash[t-1] − p)` (opening a position uses one of the `t`); `cash[t] = max(cash[t], hold[t] + p)`.
+
+**Concrete — why the `t` dimension:** with k=2 you might buy-sell early *and* buy-sell late; the `t` axis lets a second transaction build on the profit locked in by the first (`cash[t-1]` feeds `hold[t]`).
+
+**Signature to remember:** add a `t` (transactions-left) axis; buying consumes a transaction (`hold[t]` draws from `cash[t-1]`).
+
+**Type / knobs:** optimizing (`max`) · at most k transactions (extra dimension) · **if k ≥ n/2, it's effectively unlimited → use Stock II greedy**.
+
+**Time:** O(n·k).  **Space:** O(k) (two rows of size k+1, or 1D updated carefully).
+
+### Tabulation ‖ Space-optimized (k dimension)
+
+```java
+// ── TABULATION (day × k × hold) ──                // ── SPACE-OPTIMIZED (1D over k) ──
+int maxProfit(int k, int[] p) {                  int maxProfit(int k, int[] p) {
+    int n = p.length;                                int n = p.length;
+    if (n == 0) return 0;                            if (n == 0 || k == 0) return 0;
+    // if k huge -> unlimited (Stock II)             if (k >= n / 2) {   // unlimited case
+    // dp[t][0]=cash, dp[t][1]=hold                      int profit = 0;
+    int[][] dp = new int[k+1][2];                       for (int i=1;i<n;i++)
+    for (int t = 0; t <= k; t++) dp[t][1]=-p[0];            if (p[i]>p[i-1]) profit += p[i]-p[i-1];
+                                                         return profit;
+    for (int i = 1; i < n; i++)                      }
+        for (int t = k; t >= 1; t--) {               int[] cash = new int[k+1];
+            dp[t][0]=Math.max(dp[t][0],              int[] hold = new int[k+1];
+                              dp[t][1]+p[i]);        Arrays.fill(hold, -p[0]);
+            dp[t][1]=Math.max(dp[t][1],              for (int i = 1; i < n; i++)
+                              dp[t-1][0]-p[i]);          for (int t = k; t >= 1; t--) {
+        }                                                    cash[t]=Math.max(cash[t],hold[t]+p[i]);
+    return dp[k][0];                                         hold[t]=Math.max(hold[t],cash[t-1]-p[i]);
+}                                                        }
+                                                     return cash[k];
+                                                 }
+```
+
+**Tips:**
+- **k ≥ n/2 ⇒ unlimited** — you can't make more than n/2 transactions anyway, so short-circuit to the Stock II greedy (avoids huge/wasteful k arrays, e.g. k = 10⁹).
+- **Buying consumes the transaction:** `hold[t]` draws from `cash[t-1]`. (Equivalently count on sell — just be consistent.)
+- Iterate `t` high→low if reusing a 1D array so `cash[t-1]` still holds the previous transaction's value.
+- Stock III is just this with `k = 2`.
+
+**Trick / clever variant:** the `k ≥ n/2 → greedy` short-circuit. For fixed small k (like III's k=2), you can also unroll into explicit `buy1, sell1, buy2, sell2` variables.
+
+---
+
+## Best Time to Buy and Sell Stock with Cooldown
+
+**Description:** Unlimited transactions, but after you **sell** you must **cooldown** one day (can't buy the next day).
+
+**Example:** `prices = [1,2,3,0,2]` → `3` (buy 1 sell 3, cooldown, buy 0 sell 2).
+
+**Intuition:** Add a **cooldown state**. Three states per day: `hold` (own a share), `sold` (just sold today — next day is cooldown), `rest` (in cash, free to buy). Transitions: `hold = max(hold, rest − p)` (buy only from rest, respecting cooldown); `sold = hold + p` (sell); `rest = max(rest, sold)` (cooldown ends, or keep resting).
+
+**Signature to remember:** three states — hold / sold / rest; you can only **buy from `rest`** (not from `sold`), which enforces the one-day cooldown.
+
+**Type / knobs:** optimizing (`max`) · unlimited · **cooldown = extra "sold" state you must pass through before rebuying**.
+
+**Time:** O(n).  **Space:** O(1).
+
+### Space-optimized (three states)
+
+```java
+int maxProfit(int[] p) {
+    int hold = -p[0];   // owning a share
+    int sold = 0;       // just sold today (cooldown tomorrow)
+    int rest = 0;       // in cash, free to buy
+    for (int i = 1; i < p.length; i++) {
+        int prevSold = sold;
+        sold = hold + p[i];                 // sell today
+        hold = Math.max(hold, rest - p[i]); // keep holding, or buy (only from rest)
+        rest = Math.max(rest, prevSold);    // stay resting, or come off cooldown
+    }
+    return Math.max(sold, rest);            // never end holding
+}
+```
+
+**Tips:**
+- **Buy only from `rest`, never from `sold`** — that gap is the cooldown day. Save `prevSold` before overwriting `sold`.
+- No greedy shortcut here (the cooldown breaks the "sum positive diffs" trick).
+
+**Trick / clever variant:** none — the extra `sold`/`rest` split *is* the cooldown mechanism.
+
+---
+
+## Best Time to Buy and Sell Stock with Transaction Fee
+
+**Description:** Unlimited transactions, but pay a `fee` on each transaction (charge it once, e.g. on sell).
+
+**Example:** `prices = [1,3,2,8,4,9]`, `fee = 2` → `8` (buy 1 sell 8 = 7−2=5, buy 4 sell 9 = 5−2=3).
+
+**Intuition:** The unlimited state machine, with the fee subtracted on sell: `cash = max(cash, hold + p − fee)`; `hold = max(hold, cash − p)`. The fee just makes tiny transactions not worth it.
+
+**Concrete — `[1,3,2,8,4,9], fee=2`:** worth transacting only when the gain exceeds the fee; the machine naturally skips unprofitable-after-fee trades → total `8`.
+
+**Signature to remember:** unlimited state machine, subtract `fee` on sell: `cash = max(cash, hold + p − fee)`.
+
+**Type / knobs:** optimizing (`max`) · unlimited · fee subtracted per transaction · greedy variant exists.
+
+**Time:** O(n).  **Space:** O(1).
+
+### Space-optimized (state machine) ‖ Greedy
+
+```java
+// ── STATE MACHINE ──                              // ── GREEDY (buy-low, bank fee) ──
+int maxProfit(int[] p, int fee) {                int maxProfit(int[] p, int fee) {
+    int cash = 0, hold = -p[0];                      int profit = 0, buy = p[0] + fee;
+    for (int i = 1; i < p.length; i++) {             for (int i = 1; i < p.length; i++) {
+        cash = Math.max(cash,                            if (p[i] + fee < buy)
+                        hold + p[i] - fee); //sell           buy = p[i] + fee;   // cheaper buy
+        hold = Math.max(hold, cash - p[i]); //buy        else if (p[i] > buy) {
+    }                                                        profit += p[i] - buy;
+    return cash;                                             buy = p[i];         // allow "re-sell higher"
+}                                                        }
                                                      }
-                                                     return size;
+                                                     return profit;
                                                  }
 ```
 
 **Tips:**
-- **Answer = max over all `dp[i]`, NOT `dp[n-1]`** — the longest chain can end anywhere (same "ending here" trap as Maximal Square / Kadane). #1 LIS mistake.
-- **Strict vs non-strict:** `nums[j] < nums[i]` for *strictly* increasing; use `<=` for non-decreasing. Read the problem carefully (semantics check).
-- **Patience sorting (O(n log n)):** `tails[k]` = smallest possible tail of an increasing subsequence of length `k+1`. For each `x`, binary-search the first tail `>= x` and overwrite it (or append if `x` is bigger than all). The **length of `tails` is the LIS length** — but note `tails` itself is *not* a valid subsequence, just a bookkeeping array. Use "first tail `>= x`" (lower bound) for strict; "first `> x`" (upper bound) for non-decreasing.
+- **Fee on sell:** `cash = max(cash, hold + p − fee)`. (Charge it once per transaction — on buy or sell, just be consistent.)
+- The greedy tracks an effective buy price (`price + fee`) and banks profit when the price exceeds it, resetting `buy = price` so a continued rise isn't double-charged the fee.
 
-**Trick / clever variant:** **patience sorting / binary search → O(n log n)** (shown above). The insight: maintain the smallest tail per subsequence length; a new element either extends the longest pile or improves (lowers) an existing tail.
-
----
-
-## Russian Doll Envelopes
-
-**Description:** Each envelope is `[width, height]`. Envelope A fits inside B only if **both** `A.width < B.width` and `A.height < B.height` (strict). Return the max number of envelopes you can nest (Russian-doll).
-
-**Example:** `envelopes = [[5,4],[6,4],[6,7],[2,3]]` → `3`. Nesting: `[2,3] → [5,4] → [6,7]`.
-
-**Intuition (LIS in disguise):** It's 2D nesting, but you can collapse one dimension by **sorting**. Sort by **width ascending**; for ties (equal width), sort by **height descending**. After sorting, width is non-decreasing left-to-right, so any strictly-increasing chain of *heights* automatically has strictly-increasing widths too — **except** equal-width pairs, which the descending-height tie-break prevents from both being chosen (their heights go down, so a strictly-increasing height LIS can't pick two of them). So the answer = **LIS on the heights array**.
-
-**Concrete — why height DESC for ties:** take `[3,3]` and `[3,4]` (same width, can't nest).
-- Height *ascending* tie → heights `[3, 4]` → LIS picks both = 2. **WRONG** (they can't nest).
-- Height *descending* tie → heights `[4, 3]` → LIS picks one = 1. **Correct.**
-The descending tie-break is what stops equal-width envelopes from being counted together.
-
-**Signature to remember:** sort width ↑, height ↓ on ties → LIS on heights. The tie-break direction is the whole trick.
-
-**Type / knobs:** optimizing (`max`) · reduces to LIS after sorting · use O(n log n) LIS (n can be large).
-
-**Time:** O(n log n) — sort + patience-sorting LIS.
-**Space:** O(n).
-
-### Solution (sort → LIS on heights, O(n log n))
-
-```java
-int maxEnvelopes(int[][] envelopes) {
-    // width ascending; on equal width, height DESCENDING (so equal widths can't both be chosen)
-    Arrays.sort(envelopes, (a, b) ->
-        a[0] == b[0] ? b[1] - a[1] : a[0] - b[0]);
-
-    // LIS on the heights (patience sorting)
-    int[] tails = new int[envelopes.length];
-    int size = 0;
-    for (int[] e : envelopes) {
-        int h = e[1];
-        int lo = 0, hi = size;
-        while (lo < hi) {                 // first tail >= h  (strict increase)
-            int mid = (lo + hi) / 2;
-            if (tails[mid] < h) lo = mid + 1;
-            else hi = mid;
-        }
-        tails[lo] = h;
-        if (lo == size) size++;
-    }
-    return size;
-}
-```
-
-**Tips:**
-- **The tie-break is the whole problem.** Width ascending is obvious; height *descending* on equal widths is the subtle part — it prevents equal-width envelopes (which can't nest) from forming a fake increasing height run.
-- After sorting, you've reduced a 2D nesting problem to plain **LIS on heights** — a clean example of "reduce to a known problem by removing a dimension via sorting."
-- Use the **O(n log n) LIS** here (patience sorting), since envelope counts can be large; the O(n²) LIS may TLE.
-
-**Trick / clever variant:** **sort to collapse one dimension, then LIS on the other.** The reduce-to-known move (like LPS = LCS(s, reverse(s))) — recognizing "this is LIS wearing a 2D costume" is the insight.
-
----
-
-# Unbounded Knapsack
-
-Each item can be used **unlimited times** (0, 1, 2, … copies). Signature move: when you "use" an item you **stay on the same item** (can reuse it), unlike 0/1 knapsack where taking an item moves you past it. The recurrence is **loop-inside-step** (loop over items/coins). Reach-back distance varies (any item value), so it **keeps the whole array** — no rolling-variable collapse.
-
-**Knob checklist for this family:** *type?* (min/count/feasible → operator) · *item reuse?* unlimited (stay on item) · *order matter?* (combinations vs permutations → loop nesting).
-
----
-
-## Coin Change  *(min coins — optimizing)*
-
-**Description:** Given coin denominations `coins` and a `amount`, return the **fewest coins** that sum to `amount`, or `-1` if impossible. Unlimited coins of each type.
-
-**Example:** `coins = [1,2,5]`, `amount = 11` → `3` (5 + 5 + 1).
-
-**Intuition:** `dp[a]` = fewest coins to make amount `a`. The choice is "which coin do I use *last*?" — one option per coin. Using coin `c` means: one coin now (`+1`) plus the best way to make the leftover `a - c` (already solved). Try every coin, take the min:
-
-> `dp[a] = min over coins c (c ≤ a) of ( dp[a - c] + 1 )`
-
-Base case `dp[0] = 0` (zero coins make amount 0). "Impossible" needs an explicit sentinel (there's no valid min) — use a big value and translate to `-1` at the end.
-
-**Concrete — `dp[6]` for `coins = [1,2,5]`** (say `dp[5]=1, dp[4]=2, dp[1]=1` already known):
-- use coin 1 → `dp[5] + 1 = 1 + 1 = 2`
-- use coin 2 → `dp[4] + 1 = 2 + 1 = 3`
-- use coin 5 → `dp[1] + 1 = 1 + 1 = 2`
-
-Take the min → `dp[6] = 2` (e.g. 5 + 1). Each coin proposes "spend one of me + cheapest way to make the rest"; min keeps the best.
-
-**Signature to remember:** optimizing → `min`, base `dp[0]=0`; loop over coins; impossible → sentinel → `-1`.
-
-**Type / knobs:** optimizing (`min`) · unbounded (reuse coins) · loop-inside-step · keeps whole array.
-
-**Time:** O(amount × coins).
-**Space:** O(amount) (the `dp` array — doesn't collapse; reach-back varies by coin value).
-
-### Recurrence ‖ Memo
-
-```java
-// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(amount·coins)
-int coinChange(int[] coins, int amount) {        Integer[] memo;
-    int r = dfs(coins, amount);                  int coinChange(int[] coins, int amount) {
-    return r == Integer.MAX_VALUE ? -1 : r;          memo = new Integer[amount + 1];
-}                                                    int r = dfs(coins, amount);
-                                                     return r == Integer.MAX_VALUE ? -1 : r;
-int dfs(int[] coins, int a) {                    }
-    if (a == 0) return 0;                         int dfs(int[] coins, int a) {
-    if (a < 0) return Integer.MAX_VALUE; // dead      if (a == 0) return 0;
-                                                     if (a < 0) return Integer.MAX_VALUE;
-    int best = Integer.MAX_VALUE;                    if (memo[a] != null) return memo[a];   // hit
-    for (int c : coins) {                            int best = Integer.MAX_VALUE;
-        int sub = dfs(coins, a - c);                 for (int c : coins) {
-        if (sub != Integer.MAX_VALUE)                    int sub = dfs(coins, a - c, memo);
-            best = Math.min(best, sub + 1);              if (sub != Integer.MAX_VALUE)
-    }                                                        best = Math.min(best, sub + 1);
-    return best;                                      }
-}                                                    return memo[a] = best;
-                                                 }
-```
-
-### Tabulation  *(no clean space-opt — reach-back varies by coin value)*
-
-```java
-int coinChange(int[] coins, int amount) {
-    int[] dp = new int[amount + 1];
-    Arrays.fill(dp, amount + 1);        // "impossible" sentinel (bigger than any real answer)
-    dp[0] = 0;                          // base case
-
-    for (int a = 1; a <= amount; a++) {         // fill low -> high
-        for (int c : coins) {                   // loop-inside-step over coins
-            if (c <= a)
-                dp[a] = Math.min(dp[a], dp[a - c] + 1);
-        }
-    }
-    return dp[amount] > amount ? -1 : dp[amount];
-}
-```
-
-**Tips:**
-- **Impossible sentinel:** fill with `amount + 1` (no real answer exceeds `amount`), not `MAX_VALUE` — avoids overflow on the `+1`. Final check `dp[amount] > amount` → `-1`.
-- **Nested loop** (amounts outer, coins inner) is the loop-inside-step signature. Order doesn't matter here (counting *coins*, not combinations), so either nesting works.
-- **No space-opt to O(1):** `dp[a]` can reach back by *any* coin value, so you need the whole array — the defining trait of this family vs. the rolling-variable 1D problems.
-- Memo sentinel: `Integer[]`/`null` (a real answer can be 0, and `MAX_VALUE` is a real "impossible" value you cache).
-
-**Trick / clever variant:** none — but note it's a **BFS** in disguise (shortest path over reachable amounts). Min-coins = fewest edges to reach `amount` from 0.
-
----
-
-## Coin Change II  *(count ways — counting)*
-
-**Description:** Given `coins` and an `amount`, return the **number of distinct combinations** that sum to `amount`. Unlimited coins. `{1,2}` and `{2,1}` are the **same** combination (count once).
-
-**Example:** `coins = [1,2,5]`, `amount = 5` → `4`: `{5}`, `{1,1,1,2}`, `{1,2,2}`, `{1,1,1,1,1}`.
-
-**Intuition:** counting, so combine with `+` and base case `1`. The **trap** is combinations vs permutations — `{1,2}` and `{2,1}` must count once. The 2D recurrence makes this explicit: `dfs(i, a)` = ways to make `a` using coins from index `i` onward. Two choices: **skip** coin `i` (move to `i+1`) or **use** coin `i` (stay on `i`, since unlimited). Sum them.
-
-> `dfs(i, a) = dfs(i+1, a)  +  dfs(i, a - coins[i])`
-
-Base cases: `a == 0` → 1 (one way — take nothing more); `a < 0` or `i == n` → 0. The coin index only moves *forward* (skip advances, use stays) — that one-directional movement enforces a fixed coin order, so no permutation double-counting.
-
-**Concrete — `dfs(coin1, amt3)` for `coins=[1,2]`, amount 3:**
-- **skip coin 1** → `dfs(coin2, amt3)`: only coin 2 left → makes 3? no (2 doesn't divide into 3 cleanly with one coin type)… `2→ dfs(coin2,1)→` dead → 0 ways via pure 2s.
-- **use coin 1** → `dfs(coin1, amt2)`: keep using coin 1 → leads to `{1,1,1}` and `{1,2}`.
-
-Total = 2 ways: `{1,1,1}` and `{1,2}`. Note `{2,1}` never appears — using coin 2 requires having *skipped* coin 1 first, so coin 1 can't come after coin 2.
-
-**Signature to remember:** counting → `+`, base `1`; 2D state `(coin index, amount)`; skip advances `i`, use stays on `i`. 1D collapse = "coins on the OUTER loop."
-
-**Type / knobs:** counting (`+`) · unbounded · **combinations** (coins-outer loop) · impossible → 0 (free, no sentinel).
-
-**Time:** O(amount × coins).
-**Space:** O(amount × coins) memo · O(amount) 1D.
-
-### Recurrence ‖ Memo
-
-```java
-// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(amount·coins)  2D state (i, a)
-int change(int amount, int[] coins) {            Integer[][] memo;
-    return dfs(0, amount, coins);                int change(int amount, int[] coins) {
-}                                                    memo = new Integer[coins.length][amount + 1];
-                                                     return dfs(0, amount, coins);
-int dfs(int i, int a, int[] coins) {             }
-    if (a == 0) return 1;   // one way            int dfs(int i, int a, int[] coins) {
-    if (a < 0) return 0;                             if (a == 0) return 1;
-    if (i == coins.length) return 0;                 if (a < 0) return 0;
-                                                     if (i == coins.length) return 0;
-    int skip = dfs(i+1, a, coins);                   if (memo[i][a] != null) return memo[i][a]; //hit
-    int use  = dfs(i, a - coins[i], coins);          int skip = dfs(i+1, a, coins, memo);
-    return skip + use;                               int use  = dfs(i, a - coins[i], coins, memo);
-}                                                    return memo[i][a] = skip + use;
-                                                 }
-```
-
-### Tabulation ‖ Space-optimized (1D, coins-outer)
-
-```java
-// ── TABULATION (2D) ──                            // ── SPACE-OPTIMIZED (1D) — coins OUTER ──
-int change(int amount, int[] coins) {            int change(int amount, int[] coins) {
-    int n = coins.length;                            int[] dp = new int[amount + 1];
-    int[][] dp = new int[n + 1][amount + 1];         dp[0] = 1;   // one way to make 0
-    for (int i=0;i<=n;i++) dp[i][0]=1; // amt0=1
-                                                     for (int c : coins) {          // coins OUTER
-    for (int i = 1; i <= n; i++) {                       for (int a = c; a <= amount; a++) {
-        for (int a = 0; a <= amount; a++) {                  dp[a] += dp[a - c];    // add ways using c
-            dp[i][a] = dp[i-1][a];  // skip              }
-            if (a >= coins[i-1])                     }
-                dp[i][a] += dp[i][a-coins[i-1]];     return dp[amount];
-        }                                        }
-    }
-    return dp[n][amount];
-}
-```
-
-**Tips:**
-- **Coins on the OUTER loop** (1D version) is the crux — it processes one coin fully before the next, so each combination is built in a fixed coin order → no permutation double-counting. Flipping to amount-outer would count *permutations* (that's Combination Sum IV).
-- **Impossible is free:** if an amount can't be made, its count is just `0` — no sentinel needed (counting handles "no solution" naturally, unlike optimizing).
-- 2D memo state is `(coin index, amount)` — the coin dimension is *why* no double-counting; it collapses to 1D via the outer coin loop.
-- Contrast Coin Change I: there order didn't matter (counting coins), so loop nesting was free; here order matters (counting combinations), so nesting is fixed.
-
-**Trick / clever variant:** the **coins-outer loop order** is the clever bit — it's what turns "count sequences" into "count sets." Recognizing combinations-vs-permutations decides the loop nesting.
-
----
-
-# 0/1 Knapsack
-
-Each item is used **at most once** (0 or 1 copies). Signature move: when you "take" an item you **move past it** (to `i-1`/`i+1`), unlike unbounded where you stay. State is 2D: `dp[i][budget]` = best/count/feasible using the first `i` items for a given budget/target.
-
-**Knob checklist:** *type?* (min/count/feasible → operator) · *item reuse?* **once** (take → move past item) · *(1D space-opt only)* iterate the budget **backward** (high→low) so an item isn't reused within one pass — the famous 0/1 gotcha.
-
----
-
-## Partition Equal Subset Sum
-
-**Description:** Given `nums`, return `true` if the array can be split into two subsets with **equal sum**.
-
-**Example:** `nums = [1,5,11,5]` → `true`. Split `{11}` and `{1,5,5}`, both sum to 11.
-
-**Intuition (the reduction):** Two equal halves means each sums to `total/2`. But you only need to find **one** subset summing to `total/2` — the leftover *automatically* sums to `total/2` too (they're complements). So it reduces to: **"can a subset sum to exactly `total/2`?"** If `total` is odd → immediately `false`. It's a *feasibility* 0/1 knapsack: `dp[i][t]` = "can I make sum `t` using the first `i` numbers?", combine with `OR`, base `dp[i][0] = true` (sum 0 = pick nothing).
-
-**Concrete — `dp[i][t]` choice for number `nums[i-1]`:** can I make sum `t` from the first `i` numbers?
-- **skip** it → can I make `t` from the first `i-1`? → `dp[i-1][t]`
-- **take** it (if `t >= nums[i-1]`) → can I make the leftover `t - nums[i-1]` from the first `i-1`? → `dp[i-1][t - nums[i-1]]`
-
-`OR` them: reachable if *either* works. (Take moves to `i-1` — past the item — enforcing "each used once.")
-
-**Signature to remember:** reduce to "subset sums to `total/2`?"; odd total → false; feasibility `OR`, base `true`; take → move past item.
-
-**Type / knobs:** feasibility (`OR`) · 0/1 (each number once) · target = `total/2` · impossible → just `false`.
-
-**Time:** O(n × target) where target = total/2.
-**Space:** memo/tabulation O(n × target) · space-optimized O(target) 1D.
-
-### Recurrence ‖ Memo
-
-```java
-// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(n·target)  2D state (i, t)
-boolean canPartition(int[] nums) {               Boolean[][] memo;
-    int sum = 0; for (int x : nums) sum += x;     boolean canPartition(int[] nums) {
-    if (sum % 2 != 0) return false;                   int sum = 0; for (int x : nums) sum += x;
-    return dfs(nums, 0, sum / 2);                     if (sum % 2 != 0) return false;
-}                                                     memo = new Boolean[nums.length][sum/2 + 1];
-                                                      return dfs(nums, 0, sum / 2);
-boolean dfs(int[] nums, int i, int t) {          }
-    if (t == 0) return true;   // made target     boolean dfs(int[] nums, int i, int t) {
-    if (i == nums.length || t < 0)                    if (t == 0) return true;
-        return false;                                 if (i == nums.length || t < 0) return false;
-    // skip i-th  OR  take i-th (move past)            if (memo[i][t] != null) return memo[i][t]; //hit
-    return dfs(nums, i+1, t) ||                       return memo[i][t] =
-           dfs(nums, i+1, t - nums[i]);                   dfs(nums, i+1, t, memo) ||
-}                                                            dfs(nums, i+1, t - nums[i], memo);
-                                                 }
-```
-
-### Tabulation ‖ Space-optimized (1D — iterate target BACKWARD)
-
-```java
-// ── TABULATION (2D) ──                            // ── SPACE-OPTIMIZED (1D, target backward) ──
-boolean canPartition(int[] nums) {               boolean canPartition(int[] nums) {
-    int sum = 0; for (int x:nums) sum += x;          int sum = 0; for (int x:nums) sum += x;
-    if (sum % 2 != 0) return false;                  if (sum % 2 != 0) return false;
-    int T = sum / 2, n = nums.length;                int T = sum / 2;
-    boolean[][] dp = new boolean[n+1][T+1];          boolean[] dp = new boolean[T + 1];
-    for (int i=0;i<=n;i++) dp[i][0]=true; //sum0     dp[0] = true;   // sum 0 always reachable
-
-    for (int i = 1; i <= n; i++) {                   for (int x : nums) {
-        for (int t = 0; t <= T; t++) {                   for (int t = T; t >= x; t--) {  // BACKWARD
-            dp[i][t] = dp[i-1][t];  // skip                  dp[t] = dp[t] || dp[t - x];
-            if (t >= nums[i-1])                          }
-                dp[i][t] = dp[i][t]                  }
-                    || dp[i-1][t-nums[i-1]]; //take  return dp[T];
-        }                                        }
-    }
-    return dp[n][T];
-}
-```
-
-**Tips:**
-- **The reduction is the insight:** "partition into two equal halves" → "does a subset sum to `total/2`?" (the other half is forced). Odd total → instantly false.
-- **1D space-opt iterates the target BACKWARD** (`t` from `T` down to `x`). This is *the* 0/1 gotcha: going forward would let the same number be added twice in one pass (turning it into unbounded knapsack). Backward guarantees each item is used at most once.
-- Feasibility handles "impossible" for free — the answer is just `false`, no sentinel.
-- **Set trick:** since it's feasibility, a `Set<Integer>` of reachable sums works instead of the boolean array (store only the `true` cells). Only valid for *feasibility* types (not min/count).
-
-**Trick / clever variant:** **set-of-reachable-sums** — maintain a `Set` of achievable subset sums, expanding by each number; if `total/2` appears, return true. Compact form of feasibility DP. (Also: **Target Sum** reduces here — "assign ± to hit target" becomes "count subsets summing to `(target+total)/2`", a *counting* 0/1 knapsack.)
+**Trick / clever variant:** greedy — carry an effective buy price `p + fee`; realize profit when price exceeds it, then reset the buy price to the current price (so one long rise is charged the fee only once).
