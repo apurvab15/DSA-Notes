@@ -16,14 +16,16 @@ The question's verb picks the algorithm family, and it's usually decidable from 
 
 | The question asks... | Family | Because |
 |---|---|---|
-| "Is there a path / are they connected / how many groups" | **DSU (Section 8) or DFS (Section 6)** | Membership only — no distance needed |
+| "Is there a path / are they connected / how many groups" | **DSU (Section 9) or DFS (Section 7)** | Membership only — no distance needed |
 | "Shortest / minimum steps / fewest / earliest" | **Shortest-path family (Section 3–5)** | Needs the distance guarantee |
-| "Order / before / prerequisite / valid sequence" | **Topological sort (Section 7)** | Precedence constraints |
-| "All / count / enumerate / every path" | **DFS + backtracking (Section 6)** | Exhaustive; call stack carries the path |
-| "Best value achievable over paths" (longest, max sum, # of ways) | **DP on a DAG (Section 6, LC 329)** | Optimization with reusable subproblems |
+| "Order / before / prerequisite / valid sequence" | **Topological sort (Section 8)** | Precedence constraints |
+| "All / count / enumerate / every path" | **DFS + backtracking (Section 7)** | Exhaustive; call stack carries the path |
+| "Best value achievable over paths" (longest, max sum, # of ways) | **DP on a DAG (Section 7, LC 329)** | Optimization with reusable subproblems |
 | "Detect a cycle" | **DSU** (undirected) / **Kahn's or 3-color DFS** (directed) | Direction changes the tool entirely |
 
 If you can't name the verb, you don't understand the problem yet — that's a signal to re-read, not to start coding.
+
+**Before Step 2, check the graph's *shape*.** One structural property overrides the whole table: if **every node has out-degree ≤ 1** (`edges[i] = j` or `-1`, a permutation of `0..n-1`, or a jump array), it's a **functional graph** — walking is deterministic, and most machinery collapses to a single loop. See Section 11.
 
 ### Step 2 — Read the cost structure
 
@@ -838,7 +840,7 @@ public int findCheapestPrice(int n, int[][] flights, int src, int dst, int k) {
 
 **Why popping `dst` is safe as the answer:** the heap is ordered by cost, so the first time `dst` comes off the heap it's via the cheapest cost *among all paths within the stop budget* — the ones exceeding `k` stops were pruned before they could expand. The `minStops` prune keeps the heap from exploding on graphs with many cheap-but-long detours.
 
-> **Interview aside worth volunteering:** this problem is *also* cleanly solved by **Bellman-Ford run exactly `k+1` rounds** (O(k·E), often stated as the "intended" solution because the stop-limit maps perfectly onto Bellman-Ford's round = edge-count structure). Naming both — "Dijkstra with an augmented `(city, stops)` state, or Bellman-Ford capped at k+1 relaxation rounds" — is exactly the kind of two-solution fluency L4 interviewers reward.
+> **This problem is *also* — and more cleanly — solved by Bellman-Ford**, because the "at most k stops" limit maps exactly onto Bellman-Ford's rounds. That version is the worked example in Section 6; naming both approaches is the two-solution fluency L4 rewards.
 
 **Time:** O(E·K·log(...)) in the augmented state space. **Space:** O(V + E) plus heap.
 
@@ -895,7 +897,90 @@ public int swimInWater(int[][] grid) {
 
 ---
 
-## 6. DFS
+## 6. Bellman-Ford
+
+### Intuition
+
+**One sentence:** relax **every edge**, `V-1` times over — after round `i`, each node holds its cheapest cost using **at most `i` edges**.
+
+That "at most `i` edges" property is the whole reason Bellman-Ford exists as a separate tool. Dijkstra is faster but has no notion of *hop count* and dies on negative weights. Bellman-Ford is slower but handles both, because it doesn't rely on "first pop is final" — it just keeps sweeping until nothing improves.
+
+**Concrete:** start with `dist[src] = 0`, everything else `∞`. Round 1 fills in every node one edge from `src`. Round 2 extends those by one more edge. After `k+1` rounds, you've covered every path of up to `k+1` edges — no more, no less.
+
+### Boilerplate
+
+```java
+int[] dist = new int[n];
+Arrays.fill(dist, Integer.MAX_VALUE);
+dist[src] = 0;
+
+for (int i = 0; i < n - 1; i++) {                 // V-1 rounds
+    for (int[] e : edges) {                        // relax EVERY edge
+        int u = e[0], v = e[1], w = e[2];
+        if (dist[u] == Integer.MAX_VALUE) continue;   // guard: MAX_VALUE + w overflows
+        if (dist[u] + w < dist[v]) dist[v] = dist[u] + w;
+    }
+}
+// optional: one more round that still improves something ⇒ a negative cycle exists
+```
+
+**Time:** O(V·E) — `V-1` rounds, each scanning all `E` edges.
+**Space:** O(V) for `dist`.
+
+### When to use it
+
+- **Negative edge weights.** The defining case — Dijkstra's "first pop is final" breaks when a later edge can undercut a settled distance; Bellman-Ford doesn't care.
+- **A hop / edge-count constraint** ("at most `k` stops"). Rounds *are* hop counts, so the limit maps directly onto the loop bound (LC 787 below).
+- **Detecting negative cycles.** If a `V`-th round still relaxes something, a negative cycle is reachable.
+
+**When *not* to:** no negative weights and no hop limit → Dijkstra, O(E log V), much faster. All weights equal → BFS.
+
+### Example problem — Cheapest Flights Within K Stops (LC 787, Medium)
+
+> `n` cities, `flights[i] = [from, to, price]`. Cheapest price from `src` to `dst` using **at most `k` stops** (so at most `k+1` edges), or `-1`.
+
+**Why Bellman-Ford fits perfectly:** "at most `k` stops" = "at most `k+1` edges," and after `i` Bellman-Ford rounds every node holds its cheapest cost using ≤ `i` edges. So run exactly **`k+1` rounds** and read `dist[dst]`. The constraint that makes Dijkstra awkward (it has no hop counter) is the one Bellman-Ford expresses for free.
+
+```java
+public int findCheapestPrice(int n, int[][] flights, int src, int dst, int k) {
+    int[] prices = new int[n];
+    Arrays.fill(prices, Integer.MAX_VALUE);
+    prices[src] = 0;
+
+    for (int i = 0; i <= k; i++) {                     // k+1 rounds = at most k+1 edges
+        int[] tmp = Arrays.copyOf(prices, n);          // freeze last round's values
+        for (int[] f : flights) {
+            int s = f[0], d = f[1], p = f[2];
+            if (prices[s] == Integer.MAX_VALUE) continue;
+            if (prices[s] + p < tmp[d]) tmp[d] = prices[s] + p;
+        }
+        prices = tmp;                                  // commit this round
+    }
+    return prices[dst] == Integer.MAX_VALUE ? -1 : prices[dst];
+}
+```
+
+**The copy is load-bearing — this is the one trap.** You read from `prices` (last round) and write into `tmp` (this round). Without it, relaxing `A→B` then `B→C` *within the same round* would let a path use two edges in one round, silently blowing the stop budget. With it, each round adds **exactly one** edge. (Empirically, dropping the copy is wrong on ~3% of random inputs — it returns a too-cheap path that uses too many hops.)
+
+**The `== MAX_VALUE` guard** prevents `MAX_VALUE + price` from overflowing to a negative and looking like a bargain.
+
+**Time:** O(k·E) — only `k+1` rounds here, not `V-1`. **Space:** O(V).
+
+### Dijkstra vs Bellman-Ford — one line
+
+> Dijkstra: fast (O(E log V)), non-negative weights, no hop count. Bellman-Ford: slower (O(V·E)), but handles negative weights, hop limits, and negative-cycle detection. Same relaxation `dist[u] + w < dist[v]`; the difference is *order* — Dijkstra picks the next node greedily by a heap, Bellman-Ford blindly sweeps every edge each round.
+
+### Tips & tricks
+
+- **Round `i` = "≤ i edges."** Memorize this; it's the whole algorithm and the reason it fits hop-limited problems.
+- **Copy the array per round** whenever the problem limits path length. In-place relaxation lets one round chain multiple edges — the LC 787 trap.
+- **Guard `dist[u] == MAX_VALUE`** before `dist[u] + w`, or use `long`, to avoid overflow.
+- **"Easy to explain" is a real advantage.** For LC 787, Bellman-Ford narrates in one sentence (rounds = hops) where the augmented-state Dijkstra needs you to justify the `(city, stops)` tuple and the `minStops` prune. Under pressure, pick the one you can talk through cleanly.
+- **Negative cycle?** Run one extra round; if anything still improves, a negative cycle is reachable.
+
+---
+
+## 7. DFS
 
 ### Intuition
 
@@ -1098,9 +1183,9 @@ In grid/sequence DP you collapse `dp[i][j]` to one row because row `i` depends o
 
 This is a useful negative example for your "when does space-opt apply?" instinct: **row-collapse works only when dependencies point to a bounded, fixed set of previous rows/columns.** Grid-path DP (depends on up + left) collapses; LIS-in-matrix (depends on arbitrary-direction neighbors) does not.
 
-#### Trick / clever variant — Kahn's peeling (drops the sort, ties to Section 7)
+#### Trick / clever variant — Kahn's peeling (drops the sort, ties to Section 8)
 
-The tabulation's `O(M·N log(M·N))` sort can be removed. This is a **longest-path-on-a-DAG** problem, and Section 7 solves those by topological *layering*: give each cell an out-degree = number of strictly-larger neighbors, seed a queue with the **local maxima** (out-degree 0), and peel layer by layer. The number of layers peeled *is* the longest increasing path length — because each layer strips off the current "tops" of all paths.
+The tabulation's `O(M·N log(M·N))` sort can be removed. This is a **longest-path-on-a-DAG** problem, and Section 8 solves those by topological *layering*: give each cell an out-degree = number of strictly-larger neighbors, seed a queue with the **local maxima** (out-degree 0), and peel layer by layer. The number of layers peeled *is* the longest increasing path length — because each layer strips off the current "tops" of all paths.
 
 ```java
 int longestIncreasingPath(int[][] matrix) {
@@ -1155,7 +1240,7 @@ This is O(M·N) (no sort) and reuses the exact Kahn's-peeling machinery from the
 
 ---
 
-## 7. Topological Sort
+## 8. Topological Sort
 
 ### Intuition
 
@@ -1260,6 +1345,7 @@ This is where most interview mileage is. The core loop barely changes; you bolt 
 | **Lexicographically smallest order** | Swap the `Queue` for a `PriorityQueue<Integer>` (min-heap). Cost rises to O(V log V + E). Common Alien-Dictionary follow-up. |
 | **Longest path / counting paths on a DAG** | Process nodes in topo order; run a DP relaxation as you pop each node. Topo order guarantees dependencies are finalized first. |
 | **The graph is implicit** | The real work is *building* it: Alien Dictionary derives edges from adjacent word pairs; Sequence Reconstruction from consecutive elements. The sort itself is boilerplate. |
+| **The graph is undirected** | Peel **degree 1** (leaves), not indegree 0 — an undirected leaf keeps its single edge. And stop at a target count rather than draining the queue (LC 310). |
 | **Isolated nodes with no constraints** | Make sure they're in the indegree map with indegree 0 so they still get emitted — a classic Alien Dictionary bug (letters that appear but have no ordering edge). |
 
 ### Example problems
@@ -1379,61 +1465,218 @@ public boolean sequenceReconstruction(int[] nums, List<List<Integer>> sequences)
 
 ```java
 public String alienOrder(String[] words) {
-    Map<Character, List<Character>> adj = new HashMap<>();
+    Map<Character, Set<Character>> adj = new HashMap<>();
     Map<Character, Integer> indegree = new HashMap<>();
-    for (String w : words)                      // register EVERY letter first
-        for (char c : w.toCharArray()) {
-            adj.putIfAbsent(c, new ArrayList<>());
+
+    for (String word : words)                                   // register EVERY letter first
+        for (char c : word.toCharArray()) {
+            adj.putIfAbsent(c, new HashSet<>());
             indegree.putIfAbsent(c, 0);
         }
 
-    for (int i = 0; i + 1 < words.length; i++) {
-        String a = words[i], b = words[i + 1];
-        if (a.length() > b.length() && a.startsWith(b)) return "";  // prefix trap
-        int len = Math.min(a.length(), b.length());
-        for (int j = 0; j < len; j++) {
-            char ca = a.charAt(j), cb = b.charAt(j);
-            if (ca != cb) {
-                adj.get(ca).add(cb);
-                indegree.put(cb, indegree.get(cb) + 1);
-                break;                          // ONLY the first difference is an edge
+    for (int i = 0; i < words.length - 1; i++) {
+        String w1 = words[i], w2 = words[i + 1];
+        int minLen = Math.min(w1.length(), w2.length());
+        if (w1.length() > w2.length() && w1.startsWith(w2)) return "";   // prefix trap
+        for (int j = 0; j < minLen; j++) {
+            char c1 = w1.charAt(j), c2 = w2.charAt(j);
+            if (c1 != c2) {
+                if (adj.get(c1).add(c2))                        // add returns false if already present
+                    indegree.put(c2, indegree.get(c2) + 1);     // only count a NEW edge
+                break;                                          // ONLY the first difference is an edge
             }
         }
     }
 
-    Queue<Character> queue = new ArrayDeque<>();
+    Deque<Character> queue = new ArrayDeque<>();
     for (char c : indegree.keySet())
         if (indegree.get(c) == 0) queue.offer(c);
 
-    StringBuilder sb = new StringBuilder();
+    StringBuilder res = new StringBuilder();
     while (!queue.isEmpty()) {
         char c = queue.poll();
-        sb.append(c);
-        for (char next : adj.get(c))
-            if (indegree.merge(next, -1, Integer::sum) == 0) queue.offer(next);
+        res.append(c);
+        for (char next : adj.get(c)) {
+            indegree.put(next, indegree.get(next) - 1);
+            if (indegree.get(next) == 0) queue.offer(next);
+        }
     }
-    return sb.length() == indegree.size() ? sb.toString() : "";   // leftover ⇒ cycle ⇒ ""
+    return res.length() == indegree.size() ? res.toString() : "";   // leftover ⇒ cycle ⇒ ""
 }
 ```
 
+**The dedup guard is load-bearing, not defensive.** `Set` adjacency means a repeated edge is silently dropped by `add` — but if you increment `indegree` anyway, that letter gets counted twice and decremented once, so it never drains and you falsely report a cycle. Real failure: `["ac","ab","zc","zb"]` derives `c→b` **twice**; with the guard it returns `aczb`, without it returns `""`.
+
+The invariant behind it, worth stating in one line:
+
+> **Increments to `indegree` must exactly match the multiplicity of that edge in your adjacency structure.**
+> `List` + no dedup → 2 and 2, consistent. `Set` + guard → 1 and 1, consistent. `Set` + no guard → 2 vs 1, **broken**.
+
+`Set.add` returning `false` for a duplicate is the cleanest way to express it — one call does the insert *and* the "was it new?" test, so the count can't drift from the structure.
+
+**Alternative representation:** since the alphabet is bounded at 26 you can index by `c - 'a'` and use `int[26] indegree` + `boolean[26] seen` + a `distinct` counter, which makes the peel loop literally the same line as Course Schedule (`if (--indegree[next] == 0) ...`). Faster and no boxing, but it only works for a fixed known alphabet; the map version generalizes to any character set.
+
+> **Aside — if you meet `merge` in someone else's solution:** `if (indegree.merge(next, -1, Integer::sum) == 0) queue.offer(next);` is the one-line form of the two-line decrement above. `map.merge(key, value, fn)` applies `fn(oldValue, value)`, stores it, and **returns the new value** (unlike `put`, which returns the old one). Two traps: the function receives `(oldValue, yourValue)` in that order, and an absent key silently inserts rather than throwing.
+
+
 **Why `break` after the first difference:** dictionary order only tells you about the *first* distinguishing character. From `"abc"` before `"abd"` you learn `c → d` and **nothing** about later positions — adding edges past the first difference would invent constraints that aren't implied.
 
-**Lexicographically-smallest follow-up:** swap `ArrayDeque` for `PriorityQueue<Character>` so ties break alphabetically → O(V log V + E).
+**Does the seeding order bias the answer?** Not in any way that matters — which is fortunate, because `indegree.keySet()` iterates in **HashMap order**, i.e. effectively arbitrary. Kahn's invariant is that a node is enqueued only once its indegree hits 0 — every predecessor already emitted — so **any** poll order yields a valid topological order, and LC 269 asks for any valid one. Seeding order is just a tiebreak among letters that no evidence orders relative to each other.
+
+But note what that does *not* buy you: even seeding alphabetically is **not** the same as producing lexicographically smallest output. On `["ac","ab","zc","zb"]` (edges `c→b`, `a→z`) a FIFO seeded in alphabetical order emits `aczb`, while the lex-smallest is `acbz` — because after `c` is emitted, both `b` and `z` are available and FIFO takes `z` simply for having been enqueued first. The tiebreak has to apply at **every poll**, not just at seeding, which is precisely what the `PriorityQueue` follow-up below changes.
+
+**Lexicographically-smallest follow-up:** swap `ArrayDeque` for `PriorityQueue<Character>` so ties break alphabetically → O(V log V + E). `Character`'s natural ordering is alphabetical, so a plain min-heap needs no comparator.
 
 **Time:** O(C) where C = total length of all words (building edges dominates). **Space:** O(1) unique letters (≤ 26) → effectively O(V + E).
+
+#### Find Eventual Safe States (LC 802, Medium) — peel the *reversed* graph
+
+> A node is **terminal** if it has no outgoing edges. A node is **safe** if *every* path starting from it leads to a terminal node (equivalently: it can never reach a cycle). Return all safe nodes in ascending order.
+
+**Why this one earns its place:** the previous three examples peel the graph as given. This one only works if you **reverse the edges first** — it's the remodeling move (Section 0, move 1) fused with Kahn's peeling.
+
+**The invariant, in one sentence:** *a node is safe iff every one of its successors is safe.* Terminal nodes (outdegree 0) are the base case. That's a statement about a node's **out**-edges, but Kahn's peels by *in*-edges — so reverse the graph and the recurrence becomes a standard peel:
+
+- `remaining[u]` = successors of `u` **not yet proven safe** (initialized to `graph[u].length`).
+- Seed the queue with terminal nodes.
+- When `u` is proven safe, walk `reverse[u]` — every predecessor loses one unproven successor. Hitting 0 means *all* of that predecessor's successors are safe, so it's safe too.
+
+Nodes in or leading into a cycle never drain to 0 — the **same** "leftover nodes form a cycle" property that makes Kahn's a cycle detector.
+
+**Concrete enumeration** for `graph = [[1,2],[2,3],[5],[0],[5],[],[]]`:
+
+```
+remaining = [2, 2, 1, 1, 1, 0, 0]        reverse: 5←{2,4}  2←{0,1}  3←{1}  0←{3}
+
+seed queue with terminals: 5, 6
+peel 5 → safe;  preds {2,4}: remaining[2]→0 ✓ enqueue, remaining[4]→0 ✓ enqueue
+peel 6 → safe;  no preds
+peel 2 → safe;  preds {0,1}: remaining[0]→1, remaining[1]→1   (neither drained)
+peel 4 → safe;  no preds
+queue empty. safe = {5,6,2,4} → ascending [2,4,5,6]
+                 0,1,3 never drained — they sit on the cycle 0→1→3→0
+```
+
+```java
+public List<Integer> eventualSafeNodes(int[][] graph) {
+    int n = graph.length;
+
+    List<List<Integer>> reverse = new ArrayList<>();     // reverse[v] = nodes pointing INTO v
+    for (int i = 0; i < n; i++) reverse.add(new ArrayList<>());
+    int[] remaining = new int[n];                        // successors not yet proven safe
+
+    for (int u = 0; u < n; u++) {
+        remaining[u] = graph[u].length;
+        for (int v : graph[u]) reverse.get(v).add(u);
+    }
+
+    Deque<Integer> queue = new ArrayDeque<>();
+    for (int u = 0; u < n; u++)
+        if (remaining[u] == 0) queue.offer(u);           // terminal ⇒ trivially safe
+
+    boolean[] safe = new boolean[n];
+    while (!queue.isEmpty()) {
+        int u = queue.poll();
+        safe[u] = true;
+        for (int pred : reverse.get(u))
+            if (--remaining[pred] == 0) queue.offer(pred);   // all its successors are safe
+    }
+
+    List<Integer> ans = new ArrayList<>();
+    for (int u = 0; u < n; u++) if (safe[u]) ans.add(u);     // ascending order for free
+    return ans;
+}
+```
+
+**Collect via a `boolean[]` + final scan, not by appending during the peel.** Peel order is *not* ascending, so appending forces a `Collections.sort` — O(n log n) to recover an order a linear scan gives you free. Same trick applies whenever the answer must be sorted but the algorithm emits in a different order.
+
+**Edge cases:** a **self-loop** (`graph[i]` contains `i`) makes a node its own predecessor, so its counter never drains — correctly unsafe. **Duplicate edges are also handled correctly**, even though LC 802 forbids them: `remaining[u]` is initialized to `graph[u].length` (which counts multiplicity) and `reverse[v]` holds `u` once per edge, so the increments and decrements match exactly. The counter only drains when *every* outgoing edge leads somewhere safe.
+
+**Alternative:** 3-color DFS — a node is safe iff no path from it reaches a gray (on-stack) node — same O(V + E). The peel is preferable here because it's iterative, so no stack-overflow risk at n = 10⁴.
+
+**Time:** O(V + E) **Space:** O(V + E) for the reversed adjacency, O(V) for the counter/queue/flags.
+
+#### Minimum Height Trees (LC 310, Medium) — peel an *undirected* tree inward
+
+> Given a tree with `n` nodes, return every node that, used as the root, minimizes the tree's height.
+
+**Why it belongs here:** it's the same peeling machinery on an **undirected** graph. Two adaptations: a "leaf" is **degree 1**, not indegree 0 (an undirected leaf keeps its one edge), and you must **stop before the queue empties** rather than draining it.
+
+**What the answer actually is:** rooting at `v` gives height = `v`'s eccentricity (max distance to any node), so the minimizers are the tree's **center**. Take a diameter (longest path) with `L` edges — any root has height ≥ `⌈L/2⌉`, achieved exactly at the path's midpoint:
+
+```
+L even (odd # nodes)    a — b — c — d — e      midpoint  c        ⇒ 1 center
+L odd  (even # nodes)   a — b — c — d          midpoints b, c     ⇒ 2 centers
+```
+
+A path has one or two middles, so **a tree's center is always 1 or 2 nodes — never 3.** That's the mathematical ceiling behind the `remaining > 2` bound.
+
+**Why peeling converges there, and why the check precedes the peel:**
+
+- Every tree with ≥ 3 nodes has **≥ 2 leaves**, so a round always removes something — you can never stall above 2. Each round trims one node off *each* end of every path, so the diameter shrinks by 2 per round and survivors converge on the midpoint.
+- At `remaining == 2`, **both** survivors are leaves. Peel them and you delete the answer and return empty. So the bound is the loop's stopping condition, not an optimization — move it after the peel and the code breaks.
+
+**Concrete enumeration** on the 4-path `a—b—c—d`:
+
+```
+degree = [1, 2, 2, 1]      leaves = [a, d]      remaining = 4
+round 1: peel a and d → b and c each drop to degree 1 → leaves = [b, c], remaining = 2
+loop test: remaining == 2 ⇒ STOP, return [b, c]      (peeling now would return [])
+```
+
+```java
+public List<Integer> findMinHeightTrees(int n, int[][] edges) {
+    if (n == 1) return Collections.singletonList(0);      // no edges ⇒ loop never runs
+
+    List<List<Integer>> adj = new ArrayList<>();
+    for (int i = 0; i < n; i++) adj.add(new ArrayList<>());
+    for (int[] e : edges) {
+        adj.get(e[0]).add(e[1]);
+        adj.get(e[1]).add(e[0]);                          // undirected: both directions
+    }
+
+    int[] degree = new int[n];
+    Deque<Integer> leaves = new ArrayDeque<>();
+    for (int i = 0; i < n; i++) {
+        degree[i] = adj.get(i).size();
+        if (degree[i] == 1) leaves.offer(i);              // leaf = degree 1, NOT 0
+    }
+
+    int remaining = n;
+    while (remaining > 2) {                                // stop before peeling the center away
+        int size = leaves.size();                          // freeze this layer
+        remaining -= size;
+        for (int i = 0; i < size; i++) {
+            int u = leaves.poll();
+            for (int v : adj.get(u))
+                if (--degree[v] == 1) leaves.offer(v);     // v just became a leaf
+        }
+    }
+    return new ArrayList<>(leaves);                        // 1 or 2 survivors = the center
+}
+```
+
+**Put the bound in the loop header.** Writing `while (!leaves.isEmpty())` with an early `return` inside advertises an exit condition that never fires, and forces a dead `return new ArrayList<>()` at the end. `while (remaining > 2)` states the real condition where it belongs — the unconditional-spine habit.
+
+**Edge case:** `n == 1` must be special-cased. That node has degree 0, so it never enters `leaves`, and the loop body never runs — without the guard you'd return an empty list instead of `[0]`.
+
+**Time:** O(V + E) = O(n), since a tree has exactly `n - 1` edges. **Space:** O(n).
 
 ### Tips & tricks
 
 - **Default to Kahn's in an interview.** It's iterative (no stack-overflow risk on deep graphs), and cycle detection falls out for free by comparing `order.size()` to `n`. Reach for DFS post-order only when you specifically want finish-time structure.
 - **Nail the edge direction before coding.** "A before B" / "A depends on B" flip the arrow — say the direction out loud and write one example edge. Course Schedule's `[a, b]` = `b → a` is the classic slip.
 - **Queue size > 1 ⇔ ambiguous order.** Memorize this equivalence; it's the reusable core of every "is the ordering unique / is the reconstruction unique" question.
-- **PriorityQueue ⇒ lexicographically smallest** topo order. One-line change, frequent follow-up.
+- **`PriorityQueue` ⇒ lexicographically smallest** topo order. One-line change, frequent follow-up. Note it must be a heap: seeding a FIFO in sorted order is *not* equivalent, because nodes enqueued later join the back regardless of value — the tiebreak has to fire at every poll.
 - **Register all nodes before adding edges.** Isolated nodes (indegree 0, no edges) must still be seeded into the queue, or they silently vanish from the output — the sneakiest Alien Dictionary bug.
 - **Topo sort turns a DAG into a DP tape.** Once you have the order, "longest path," "number of paths," and similar become one-pass DP — the same top-down instincts from your DP work, just sequenced by dependency instead of by index.
+- **Constraint on *out*-edges ⇒ reverse the graph, then peel.** Kahn's always peels by in-degree, so any recurrence of the form "`u` qualifies iff all its **successors** qualify" (LC 802) becomes standard peeling once the edges are flipped.
+- **Answer must be sorted, but the peel emits in a different order?** Mark a `boolean[]`, then scan `0..n-1` — O(n) instead of an O(n log n) sort on the output.
+- **Undirected peeling exists too:** peel **degree 1**, and know your stopping count in advance. A tree's center is 1 or 2 nodes (the midpoint of its diameter), so LC 310 stops at `remaining > 2` — draining the queue would delete the answer.
 
 ---
 
-## 8. Union-Find (Disjoint Set Union)
+## 9. Union-Find (Disjoint Set Union)
 
 ### Intuition
 
@@ -1502,7 +1745,7 @@ class UnionFind {
 - **Incremental connectivity** — edges added over time with queries interleaved. This is DSU's unique niche; BFS/DFS would need a full re-run per query.
 - **Many connectivity queries after a fixed edge set** — preprocess once, answer each query in O(α(n)).
 - **Counting connected components** — start `count = n`, decrement on each successful union.
-- **Cycle detection in an *undirected* graph** — a union that returns `false` means the edge closes a cycle. (For *directed* graphs use DFS 3-color or Kahn's — Section 7. DSU does not handle directed cycles.)
+- **Cycle detection in an *undirected* graph** — a union that returns `false` means the edge closes a cycle. (For *directed* graphs use DFS 3-color or Kahn's — Section 8. DSU does not handle directed cycles.)
 - **Kruskal's MST** — sort edges by weight, union greedily, skip edges whose union returns `false`.
 - **Grid component problems** as an alternative to flood-fill DFS — especially "islands as land is added over time" (LC 305), which flood-fill can't do efficiently.
 
@@ -1612,20 +1855,746 @@ public int[] findRedundantConnection(int[][] edges) {
 
 **Time:** O(E·α(n)) **Space:** O(n)
 
+### Bottleneck paths — Swim (LC 778) & Path With Max-Min (LC 1102) · *the Kruskal engine*
+
+Two problems that *look* like shortest-path but are really **connectivity under a threshold**, solved by the same three-line DSU engine. Worth studying together because they're mirror images.
+
+**The shared reframe (this is the whole idea):** a "maximize the minimum" or "minimize the maximum" path question converts to a **yes/no connectivity** question once you fix a threshold:
+
+> *"Is there a path where every cell beats threshold t?"* = *"keep only cells that beat t; are start and end connected?"*
+
+Because adding cells only ever *grows* connectivity (DSU never splits), there's a single threshold where start and end **first** connect — and that threshold is the answer. So you add cells in sorted order and stop the instant `find(start) == find(end)`. No binary search needed: the sorted sweep finds the boundary in one linear pass.
+
+**LC 778 Swim in Rising Water** — least time to cross, where time to finish a path = its **highest** elevation (minimax). Flood cells **low → high**; the moment start reaches end, the water level (highest cell added) is the answer.
+
+**LC 1102 Path With Maximum Minimum Value** — path score = its **lowest** cell, maximized (maximin). Add cells **high → low**; the moment start reaches end, the lowest cell added is the answer.
+
+```java
+// SWIM (LC 778): minimax — ascending sort, Math.max running answer
+public int swimInWater(int[][] grid) {
+    int n = grid.length;
+    int[] parent = new int[n * n];
+    for (int i = 0; i < n * n; i++) parent[i] = i;
+
+    Integer[] order = new Integer[n * n];                       // cell indices...
+    for (int i = 0; i < n * n; i++) order[i] = i;
+    Arrays.sort(order, (a, b) -> grid[a/n][a%n] - grid[b/n][b%n]);   // ...ASCENDING by elevation
+
+    boolean[] active = new boolean[n * n];
+    int[][] DIRS = {{1,0},{-1,0},{0,1},{0,-1}};
+    int ans = 0;
+    for (int idx : order) {
+        int r = idx / n, c = idx % n;
+        ans = Math.max(ans, grid[r][c]);                        // water level so far
+        active[idx] = true;
+        for (int[] d : DIRS) {
+            int nr = r + d[0], nc = c + d[1];
+            if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+            if (active[nr*n + nc]) union(parent, idx, nr*n + nc);
+        }
+        if (find(parent, 0) == find(parent, n*n - 1)) return ans;
+    }
+    return ans;
+}
+
+private int find(int[] p, int x) { while (p[x] != x) { p[x] = p[p[x]]; x = p[x]; } return x; }
+private void union(int[] p, int a, int b) { int ra = find(p,a), rb = find(p,b); if (ra != rb) p[ra] = rb; }
+```
+
+**LC 1102 is the same code with exactly three flips:**
+
+| | Swim (minimax) | Path Max-Min (maximin) |
+|---|---|---|
+| Sort order | **ascending** (low→high) | **descending** (high→low) |
+| Running answer | `Math.max` | `Math.min` |
+| Finds | smallest possible **max** | largest possible **min** |
+
+```java
+// LC 1102: only these lines differ from Swim
+Arrays.sort(order, (a, b) -> grid[b/n][b%n] - grid[a/n][a%n]);   // DESCENDING
+int ans = Integer.MAX_VALUE;
+ans = Math.min(ans, grid[r][c]);                                 // running bottleneck
+```
+
+Everything else — flatten to `r*n+c`, union active neighbors, stop at `find(0)==find(end)` — is identical.
+
+**This is Kruskal's engine** (Section 10): *sort by the bottleneck value, union incrementally, stop at a connectivity condition.* Swim floods up and stops when a path appears; LC 1102 drains down and stops when a path appears; Kruskal adds edges cheapest-first and stops when the tree completes. Same skeleton, different sort key and stop test. Recognizing "sorted additions + incremental union + connectivity check" as one tool unlocks this whole cluster, including Edge-Length-Limited Paths (LC 1697).
+
+**Each has three standard solutions — name all three for the signal:**
+
+| | Second-phase engine | Note |
+|---|---|---|
+| **DSU** (above) | sorted additions, stop at connect | elegant; O(mn·log(mn)) from the sort |
+| **Dijkstra** | max-heap, `min`/`max` relaxation | cleanest to *code live* — see below |
+| **Binary search** | guess threshold `t`, BFS reachability on cells beating `t` | the literal "minimize the max ⇒ binary-search the answer" move |
+
+**Dijkstra version (the one to actually write live)** — same `min`/`max`-relaxation template as the Swim entry in Section 5, no sorting or index flattening. LC 1102 shown here (maximin); Swim is the same with `min`→`max` and a min-heap, as in Section 5:
+
+```java
+// LC 1102 via Dijkstra: max-heap, min-relaxation
+public int maximumMinimumPath(int[][] grid) {
+    int m = grid.length, n = grid[0].length;
+    int[][] best = new int[m][n];
+    for (int[] row : best) Arrays.fill(row, -1);
+    int[][] DIRS = {{1,0},{-1,0},{0,1},{0,-1}};
+    PriorityQueue<int[]> pq = new PriorityQueue<>((a, b) -> b[2] - a[2]);   // max-heap on safeness
+    pq.offer(new int[]{0, 0, grid[0][0]});
+    best[0][0] = grid[0][0];
+
+    while (!pq.isEmpty()) {
+        int[] cur = pq.poll();
+        int r = cur[0], c = cur[1], s = cur[2];
+        if (s < best[r][c]) continue;                       // stale
+        if (r == m - 1 && c == n - 1) return s;             // first pop of end = optimal
+        for (int[] d : DIRS) {
+            int nr = r + d[0], nc = c + d[1];
+            if (nr < 0 || nr >= m || nc < 0 || nc >= n) continue;
+            int ns = Math.min(s, grid[nr][nc]);             // weakest link on the path
+            if (ns > best[nr][nc]) { best[nr][nc] = ns; pq.offer(new int[]{nr, nc, ns}); }
+        }
+    }
+    return best[m - 1][n - 1];
+}
+```
+
+The invariant holds because `min` (like `max` for Swim) is **monotonic** — extending a path can't improve its bottleneck — so first-pop-is-final applies just like ordinary Dijkstra.
+
+**Interview move:** code the Dijkstra (fewest moving parts), then say *"this is also solvable by binary-searching the threshold, or — nicest — Union-Find adding cells in sorted order until start meets end."* Naming all three shows you saw the bottleneck structure from every angle.
+
+**Time:** DSU O(mn·log(mn)) · Dijkstra O(mn·log(mn)) · binary search O(mn·log(mn)·log(range)). **Space:** O(mn).
+
+### Example problem — Most Stones Removed with Same Row or Column (LC 947, Medium)
+
+> Stones sit at integer coordinates. A stone may be removed if it **shares a row or column with another stone still on the board**. Return the maximum number removable.
+
+**The formula is the whole problem:** the answer is **`n - (number of connected components)`**, where two stones are connected if they share a row or a column (transitively).
+
+**Why `k - 1` per component:** take a spanning tree of a component and remove **leaves inward**. A leaf always shares a row or column with its parent, which is still on the board, so each removal is legal — and you run out exactly when one stone remains. So a component of `k` gives up `k - 1`, and summing over components gives `n - components`.
+
+**Concrete enumeration** for `[[0,0],[0,1],[1,1]]`:
+
+```
+(0,0) — (0,1)   share row 0
+        (0,1) — (1,1)   share column 1
+⇒ all three are ONE component (the chain alternates row-link, column-link)
+⇒ answer = 3 - 1 = 2
+```
+
+That alternation is the crux: "shares a row" alone is not enough, and neither is "shares a column." You need the transitive closure of **row OR column**, which is precisely what DSU computes.
+
+```java
+private int[] parent, size;
+
+private int find(int x) {
+    while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+}
+
+private boolean union(int a, int b) {
+    int ra = find(a), rb = find(b);
+    if (ra == rb) return false;
+    if (size[ra] < size[rb]) { int t = ra; ra = rb; rb = t; }
+    parent[rb] = ra;
+    size[ra] += size[rb];
+    return true;
+}
+
+public int removeStones(int[][] stones) {
+    int n = stones.length;
+    parent = new int[n];
+    size = new int[n];
+    for (int i = 0; i < n; i++) { parent[i] = i; size[i] = 1; }
+
+    int components = n;                                   // start: all isolated
+    for (int i = 0; i < n; i++)
+        for (int j = i + 1; j < n; j++)
+            if (stones[i][0] == stones[j][0]              // same row
+             || stones[i][1] == stones[j][1])             // OR same column
+                if (union(i, j)) components--;            // only a REAL merge counts
+
+    return n - components;
+}
+```
+
+**Nodes are stones; the `||` is the edge test.** No grouping, no fixing one coordinate — just every pair, linked if either coordinate matches. `if (union(...)) components--` is the counting idiom: start at `n` singletons and decrement on each genuine merge.
+
+**Time:** O(n²·α(n)) — the pair scan dominates. **Space:** O(n).
+
+#### Approach B — rows and columns as the nodes
+
+The remodel (Section 0, move 3): stop treating stones as nodes. Make every **row index** and every **column index** a node, and let each **stone be an edge** joining its row to its column. Two stones in the same row now share a row-node automatically, so the transitivity comes free and you do one union per stone instead of scanning pairs.
+
+```java
+public int removeStones(int[][] stones) {
+    final int OFFSET = 10001;              // coords ≤ 10^4; keeps row-ids and col-ids disjoint
+    int m = 2 * OFFSET;
+    parent = new int[m];
+    size = new int[m];
+    for (int i = 0; i < m; i++) { parent[i] = i; size[i] = 1; }
+
+    for (int[] s : stones)
+        union(s[0], s[1] + OFFSET);        // each stone: connect its row to its column
+
+    Set<Integer> roots = new HashSet<>();
+    for (int[] s : stones)
+        roots.add(find(s[0]));             // iterate STONES, not the id range
+    return stones.length - roots.size();
+}
+```
+
+Same `find`/`union` as above, byte for byte — **only the node definition changed.**
+
+Three things to get right:
+
+- **The offset.** Row 3 and column 3 must be distinct nodes; `c + 10001` guarantees no collision since coordinates cap at 10⁴.
+- **Count roots by iterating stones.** Looping `0..m` would count all 20002 ids, including the thousands of empty rows and columns that are their own singleton components.
+- **`find(s[0])` alone suffices.** The stone already unioned its row with its column, so `find(row) == find(col)` — either names the component. It isn't that rows are special; it's that they're already merged.
+
+**Time:** O(n·α(n)) **Space:** O(maxCoord) for the id space.
+
+#### Approach B, HashMap variant — no offset, no coordinate bound
+
+The `OFFSET = 10001` works only because the problem caps coordinates at 10⁴. A map-backed DSU drops that assumption: nodes are created lazily on first touch, and columns are keyed as **`~c`** (bitwise NOT), which is always negative and therefore can never collide with a non-negative row id.
+
+```java
+private Map<Integer, Integer> parent, size;
+
+private int find(int x) {
+    parent.putIfAbsent(x, x);                 // lazy node creation — no init loop
+    size.putIfAbsent(x, 1);
+    int root = x;
+    while (parent.get(root) != root) root = parent.get(root);
+    while (parent.get(x) != root) {           // path compression
+        int next = parent.get(x);
+        parent.put(x, root);
+        x = next;
+    }
+    return root;
+}
+
+private boolean union(int a, int b) {
+    int ra = find(a), rb = find(b);
+    if (ra == rb) return false;
+    if (size.get(ra) < size.get(rb)) { int t = ra; ra = rb; rb = t; }
+    parent.put(rb, ra);
+    size.put(ra, size.get(ra) + size.get(rb));
+    return true;
+}
+
+public int removeStones(int[][] stones) {
+    parent = new HashMap<>();
+    size = new HashMap<>();
+
+    for (int[] s : stones)
+        union(s[0], ~s[1]);                   // row r stays r; column c becomes ~c
+
+    Set<Integer> roots = new HashSet<>();
+    for (int[] s : stones)
+        roots.add(find(s[0]));
+    return stones.length - roots.size();
+}
+```
+
+**Why `~c` works:** for `c ≥ 0`, `~c == -(c+1)`, so column ids land in the negatives while row ids stay non-negative — disjoint by construction, whatever the coordinate range.
+
+```
+row 0 -> 0      column 0 -> -1
+row 5 -> 5      column 5 -> -6        no collision possible
+```
+
+**Two Java details:** `parent.get(root) != root` compares an `Integer` against an `int`, so it **unboxes** and compares by value — safe. (Comparing two `Integer`s with `!=` would be reference comparison and would break above 127.) And `putIfAbsent` inside `find` means there's no initialization loop at all — nodes appear the first time they're mentioned.
+
+**Time:** O(n·α(n)) with hashing constants. **Space:** O(distinct rows + distinct columns) — proportional to the data, not the coordinate range.
+
+#### Which to use
+
+| | Time | At n = 1000 (LC max) | Needs a coordinate bound? |
+|---|---|---|---|
+| A — stones as nodes | O(n²·α(n)) | ~871 µs (499,500 comparisons) | no |
+| B array — rows/cols as nodes | O(n·α(n)) | ~36 µs | **yes** (sizes the array) |
+| B map — rows/cols as nodes | O(n·α(n)) | ~230 µs | no |
+
+The array version is fastest; the map version trades ~6× in constants for independence from the coordinate range and no magic number. Both crush A asymptotically.
+
+**A is still a passing solution** at these constraints and is much easier to explain — so write A, get it correct, then offer B as the optimization. That sequencing is the volunteer-an-improvement step, and it's worth more than opening with B and fumbling the offset. If asked *"what if coordinates were unbounded?"*, the map variant is the answer.
+
+**Middle ground** if you want near-linear without the id-space juggling: keep stones as nodes but link each stone to only the **first** stone seen in its row and column (`Map<Integer,Integer> firstInRow, firstInCol` with `putIfAbsent`). Transitivity chains the rest — O(n) unions, no offset needed.
+
+**The transferable pattern — attribute incidence.** Whenever items are related because they **share an attribute value** (same row, same column, same email, same prime factor) and you need the transitive closure, don't compare items pairwise — **index by the attribute**. Two implementations:
+
+| | Nodes | Best when |
+|---|---|---|
+| (a) attributes as nodes | attribute values; each item is an edge joining its own attributes | attribute space small and numeric — **LC 947** rows/cols |
+| (b) items as nodes + lookup map | the items; `Map<attribute, firstOwner>`, union when an attribute repeats | attribute space huge or unbounded — **LC 721** Accounts Merge (email strings) |
+
+Same family: **LC 721** (attribute = email), **LC 952** Largest Component Size by Common Factor (attribute = prime factor — hardest to spot, since you must factorize to find it), **LC 128** Longest Consecutive Sequence (attribute = `value + 1`).
+
 ### Tips & tricks
 
 - **`union` returning `false` is the answer to a whole class of problems** — cycle detection, redundant edges, counting merges, Kruskal's edge filter. Always return a boolean from `union`.
 - **Write `find` iteratively.** Path halving (`parent[x] = parent[parent[x]]`) is two lines, has no recursion depth risk, and performs essentially as well as full recursive compression.
 - **Both optimizations or neither is worth mentioning.** If you skip union-by-size, say so and state the degraded bound — interviewers notice.
 - **1-indexed nodes → size the arrays `n + 1`.** Redundant Connection is the classic trap.
-- **Undirected cycles only.** For directed graphs, DSU can't help — that's DFS 3-color or Kahn's (Section 7).
+- **Undirected cycles only.** For directed graphs, DSU can't help — that's DFS 3-color or Kahn's (Section 8).
 - **Deletions ⇒ process in reverse.** "Edges/cells removed over time" becomes "added over time" when you replay the operation list backwards.
 - **Grid cells → flatten with `r * n + c`.** Keeps the array-based DSU instead of a slower map-based one.
+- **`n - components` is the answer shape** whenever you keep one item per group and discard the rest (LC 947). Track it with `int components = n;` and `if (union(a,b)) components--;` — the boolean does the counting.
+- **Items linked by a shared attribute? Index by the attribute, don't compare items.** Pairwise is O(n²); attribute incidence is O(n). Attributes-as-nodes for small numeric spaces (rows/cols), items-as-nodes plus a `Map<attribute, firstOwner>` for unbounded ones (emails, factors).
+- **Non-integer or unbounded node ids?** Back the DSU with `Map<K,K>` and create nodes lazily via `putIfAbsent` inside `find` — no init loop, and space scales with the data instead of the id range. For two id spaces in one DSU, key the second as `~x` (always negative, so it can never collide with a non-negative first space) rather than picking a magic offset.
 - **Ask whether the structure makes DSU unnecessary** (LC 3532). Sorted input, interval merges, or neighbor-only unions often collapse to a single labeling pass.
 
 ---
 
-## 9. When to Use BFS vs When to Use DFS
+## 10. Minimum Spanning Tree (Kruskal & Prim)
+
+### Intuition
+
+**One sentence:** an MST is the cheapest set of edges connecting every vertex — `V-1` edges, no cycles — and both standard algorithms are greedy consequences of the same fact.
+
+**The cut property** (the *why* behind both): for any way of splitting the vertices into two groups, the **cheapest edge crossing that split belongs to some MST**. Kruskal applies it globally (the next-cheapest edge always crosses *some* split of the components built so far); Prim applies it to one growing set (the frontier is the split). Saying this shows you understand why they're both correct instead of having memorized two procedures.
+
+### Kruskal — sort edges, add if no cycle
+
+Pure DSU. The `union` return value **is** the cycle check — nothing new to learn:
+
+```java
+Arrays.sort(edges, (a, b) -> a[2] - b[2]);        // edges[i] = {u, v, weight}
+int cost = 0, used = 0;
+for (int[] e : edges)
+    if (union(e[0], e[1])) {                       // false ⇒ would close a cycle ⇒ skip
+        cost += e[2];
+        if (++used == n - 1) break;                // a tree needs exactly n-1 edges
+    }
+return used == n - 1 ? cost : -1;                  // short ⇒ graph was disconnected
+```
+
+### Prim — grow a tree from one vertex
+
+Two forms, and picking the right one is the whole game:
+
+```java
+// O(V^2), no heap — the right choice on DENSE graphs
+int[] minDist = new int[n];
+boolean[] inTree = new boolean[n];
+Arrays.fill(minDist, Integer.MAX_VALUE);
+minDist[0] = 0;
+int cost = 0;
+for (int iter = 0; iter < n; iter++) {
+    int u = -1;
+    for (int v = 0; v < n; v++)                        // cheapest vertex still outside
+        if (!inTree[v] && (u == -1 || minDist[v] < minDist[u])) u = v;
+    inTree[u] = true;
+    cost += minDist[u];
+    for (int v = 0; v < n; v++)                        // relax the frontier
+        if (!inTree[v]) minDist[v] = Math.min(minDist[v], weight(u, v));
+}
+```
+
+The heap form replaces the inner scan with a `PriorityQueue<int[]>` ordered by edge weight, exactly like Dijkstra (Section 5) but storing *edge weight* rather than *accumulated distance* — that one-word difference is the whole distinction between Prim and Dijkstra.
+
+### Complexity — density decides
+
+| | Complexity | Wins when |
+|---|---|---|
+| Kruskal (sort + DSU) | O(E log E) | **sparse**, or edges arrive as a list |
+| Prim + heap | O(E log V) | sparse, adjacency list, no sort wanted |
+| Prim + array (no heap) | **O(V²)** | **dense**, especially complete graphs |
+
+The test: compare **E log V against V²**. On a complete graph `E ≈ V²`, so Kruskal pays `V² log V` while Prim's array form pays `V²` — you drop a log *and* skip sorting half a million edges. Measured on a 1000-point complete graph: **Kruskal ~197 ms, Prim O(V²) ~3 ms.**
+
+**But Kruskal is the more valuable thing to know**, because its *pattern* transfers past MST: "sort edges by weight, union incrementally, answer as you go" is the engine behind offline-query problems (Checking Existence of Edge Length Limited Paths) and edge-testing problems (LC 1489 below). Prim is only ever an MST algorithm.
+
+### Example problem — Min Cost to Connect All Points (LC 1584, Medium)
+
+> Given points on a plane, connect them all at minimum total Manhattan distance.
+
+**The recognition:** "connect everything at minimum cost" is MST. The twist is that **no edge list is given** — every pair of points is an edge, so it's a **complete graph** with `E = n(n-1)/2 ≈ 500,000` at `n = 1000`. Both algorithms are worth writing out here, because this is the cleanest case where density decides.
+
+#### Kruskal version — write this first if MST is fresh
+
+Materialize every pair as an edge, sort, and add with DSU:
+
+```java
+private int[] parent, size;
+
+private int find(int x) {
+    while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+}
+
+private boolean union(int a, int b) {
+    int ra = find(a), rb = find(b);
+    if (ra == rb) return false;
+    if (size[ra] < size[rb]) { int t = ra; ra = rb; rb = t; }
+    parent[rb] = ra;
+    size[ra] += size[rb];
+    return true;
+}
+
+public int minCostConnectPoints(int[][] points) {
+    int n = points.length;
+    parent = new int[n];
+    size = new int[n];
+    for (int i = 0; i < n; i++) { parent[i] = i; size[i] = 1; }
+
+    int[][] edges = new int[n * (n - 1) / 2][3];      // {weight, i, j}
+    int k = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = i + 1; j < n; j++)
+            edges[k++] = new int[]{
+                Math.abs(points[i][0] - points[j][0]) + Math.abs(points[i][1] - points[j][1]), i, j};
+    Arrays.sort(edges, (a, b) -> a[0] - b[0]);
+
+    int cost = 0, used = 0;
+    for (int[] e : edges)
+        if (union(e[1], e[2])) {                       // false ⇒ would close a cycle
+            cost += e[0];
+            if (++used == n - 1) break;                // tree complete
+        }
+    return cost;
+}
+```
+
+**Time:** O(n² log n) — dominated by sorting ~500k edges. **Space:** O(n²) for the edge array.
+
+This **passes** on LeetCode. It's the safer thing to write if MST isn't fully automatic for you, because it's just DSU plus a sort.
+
+#### Prim version — the density-aware answer
+
+Skip the edge list entirely. Grow a tree, keeping one `minDist` value per vertex and computing weights on demand:
+
+```java
+public int minCostConnectPoints(int[][] points) {
+    int n = points.length;
+    int[] minDist = new int[n];
+    boolean[] inTree = new boolean[n];
+    Arrays.fill(minDist, Integer.MAX_VALUE);
+    minDist[0] = 0;
+    int cost = 0;
+
+    for (int iter = 0; iter < n; iter++) {
+        int u = -1;
+        for (int v = 0; v < n; v++)                    // cheapest vertex still outside the tree
+            if (!inTree[v] && (u == -1 || minDist[v] < minDist[u])) u = v;
+        inTree[u] = true;
+        cost += minDist[u];
+
+        for (int v = 0; v < n; v++) {                  // relax the frontier
+            if (inTree[v]) continue;
+            int d = Math.abs(points[u][0] - points[v][0])
+                  + Math.abs(points[u][1] - points[v][1]);   // edge computed on the fly
+            if (d < minDist[v]) minDist[v] = d;
+        }
+    }
+    return cost;
+}
+```
+
+**Never materialize the edge list** — that's the entire point. `minDist[v]` remembers only the cheapest known connection from the tree to `v`, so you carry `O(n)` state instead of `O(n²)` edges.
+
+**Time:** O(n²) **Space:** O(n)
+
+#### Side by side
+
+| | Time | Space | Measured at n = 1000 |
+|---|---|---|---|
+| Kruskal | O(n² log n) | O(n²) — 500k edges stored | **~197 ms** |
+| Prim, array | O(n²) | O(n) | **~3 ms** |
+
+Prim drops the `log` *and* the edge storage — a 65× measured gap. Both pass, but the reason Prim wins is worth saying out loud: **on a complete graph, sorting the edges costs more than the MST construction itself.**
+
+**What to say:** *"This is an MST. Kruskal would be natural, but every pair of points is an edge — that's ~500,000 edges to build and sort. Since the graph is complete, Prim with a `minDist` array is O(n²) with no heap and no sorting, so I'll go with that."* Naming Kruskal first and then rejecting it *for a stated reason* is stronger than jumping straight to Prim.
+
+### Example problem — Find Critical and Pseudo-Critical Edges in MST (LC 1489, Hard)
+
+> **Critical** edge: deleting it increases the MST weight (or disconnects the graph) — it's in **every** MST. **Pseudo-critical**: it's in **some** MST but not all. Return both lists.
+
+**Why this one needs Kruskal:** you have to test edges *individually*, which Prim's vertex-growing has no handle on. Two probes per edge, each a full Kruskal run:
+
+| Probe | How | Conclusion |
+|---|---|---|
+| **Critical?** | run Kruskal with edge `i` **banned** | weight goes up, or can't span ⇒ **critical** |
+| **Pseudo-critical?** | run Kruskal with edge `i` **forced in first** | weight still equals base ⇒ **in some MST** |
+
+**Order matters:** test critical first. A critical edge also passes the "forced" test, so checking pseudo-critical first would misclassify it.
+
+```java
+public List<List<Integer>> findCriticalAndPseudoCriticalEdges(int n, int[][] edges) {
+    int m = edges.length;
+    int[][] e = new int[m][4];
+    for (int i = 0; i < m; i++)
+        e[i] = new int[]{edges[i][0], edges[i][1], edges[i][2], i};   // KEEP the original index
+    Arrays.sort(e, (a, b) -> a[2] - b[2]);
+
+    int base = mstWeight(n, e, -1, -1);
+    List<Integer> critical = new ArrayList<>(), pseudo = new ArrayList<>();
+
+    for (int i = 0; i < m; i++) {
+        if (mstWeight(n, e, i, -1) > base)            // banning it hurts ⇒ every MST needs it
+            critical.add(e[i][3]);
+        else if (mstWeight(n, e, -1, i) == base)      // forcing it is still optimal ⇒ some MST has it
+            pseudo.add(e[i][3]);
+    }
+    return List.of(critical, pseudo);
+}
+
+// MST weight with one edge banned (skip) or one edge forced in (force).
+// Returns MAX_VALUE when the graph can't be spanned.
+private int mstWeight(int n, int[][] e, int skip, int force) {
+    parent = new int[n];                               // FRESH DSU every call
+    size = new int[n];
+    for (int i = 0; i < n; i++) { parent[i] = i; size[i] = 1; }
+
+    int weight = 0, used = 0;
+    if (force >= 0 && union(e[force][0], e[force][1])) { weight += e[force][2]; used++; }
+    for (int i = 0; i < e.length; i++) {
+        if (i == skip) continue;
+        if (union(e[i][0], e[i][1])) { weight += e[i][2]; used++; }
+    }
+    return used == n - 1 ? weight : Integer.MAX_VALUE;
+}
+```
+
+**Four details that decide correctness:**
+
+- **Keep the original index** (`e[i][3]`). Sorting reorders the edges, but the answer is in terms of the input's indexing. Forgetting this is the most common bug here.
+- **`Integer.MAX_VALUE` for "can't span"** makes the `> base` test handle disconnection for free — no separate branch.
+- **Fresh DSU per call.** This is the concrete case for wrapping DSU in a class: `new UnionFind(n)` inside the loop, versus re-running an init loop by hand.
+- **Forcing is just "union it before the loop."** The main loop then skips it naturally, since `union` returns `false` for an already-connected pair — no double counting.
+
+**Time:** O(E²·α(V)) — `2E` Kruskal runs at O(E·α) each, plus one O(E log E) sort. With `E ≤ 200` that's ~80k union operations, trivial.
+**Space:** O(V + E)
+
+*Verified against exhaustive enumeration of every spanning tree on 800 random graphs.*
+
+### Tips & tricks
+
+- **Kruskal is `union` returning `false`, nothing more.** If you have DSU, you have Kruskal — sort, add, skip the falses.
+- **Count edges used.** `used == n - 1` confirms a spanning tree; short means the graph was disconnected. Cheaper than a separate connectivity check.
+- **No edge list given + points/coordinates ⇒ complete graph ⇒ Prim O(V²).** Compute weights on the fly; never build the E array.
+- **Prim vs Dijkstra:** identical shape, one word apart — Prim's key is the **edge weight**, Dijkstra's is the **accumulated distance from the source**. If you can write one, you can write the other.
+- **"Which edges are in every / some MST?" ⇒ ban-it and force-it probes.** Two Kruskal runs per edge, critical tested first.
+- **MST is low-frequency on Google's list** (top ~19.6 vs ~40 for the Dijkstra cluster). Know Kruskal cold, know the density rule, and don't over-invest.
+
+---
+
+## 11. Functional Graphs (out-degree ≤ 1)
+
+### Intuition
+
+**One sentence:** when **every node has at most one outgoing edge**, the graph is a *functional graph* — walking forward from any node is deterministic, so there's nothing to branch on, and most of the general machinery (queues, indegree arrays, reverse graphs, recursion) collapses into a single `while` loop.
+
+**Recognition — this is a shape, not a topic.** The input almost never says "graph." It looks like:
+
+- `edges[i] = j` — "node `i` points to node `j`" (or `-1` for none)
+- `nums` is a **permutation** of `0..n-1` — then it's a *bijective* functional graph: in-degree and out-degree are both exactly 1, so the whole graph is a **disjoint union of cycles**, no tails at all
+- "from index `i` you jump to index `i + nums[i]`" — an implicit successor function
+- any "follow the pointer / next / parent" chain
+
+**The shape that follows.** Each connected piece is a "rho" (ρ): a tail leading into exactly one cycle.
+
+```
+tail:   7 → 8 → 3 ─┐          Every component looks like this.
+                   ↓          Permutation input ⇒ no tails, pure cycles.
+        cycle:  3 → 4 → 5 → 3
+```
+
+Because a node has one exit, a walk can never fork — it ends by running off the end (`-1`) or by revisiting a node. **That determinism is what you exploit.**
+
+### Boilerplate — the walk-and-timestamp template
+
+Stamp each node with *when* it was visited, and one integer comparison distinguishes the two cases:
+
+```java
+int[] visitedAt = new int[n];       // 0 = unvisited; else the tick when stamped
+int timer = 1;
+
+for (int i = 0; i < n; i++) {
+    if (visitedAt[i] != 0) continue;
+    int start = timer;              // tick at which THIS walk began
+    int u = i;
+    while (u != -1 && visitedAt[u] == 0) {
+        visitedAt[u] = timer++;
+        u = next(u);                // the successor function
+    }
+    // stopped: dead end, or we hit an already-stamped node
+    if (u != -1 && visitedAt[u] >= start) {
+        int cycleLength = timer - visitedAt[u];   // stamped visitedAt[u] .. timer-1
+        // ... use it
+    }
+}
+```
+
+**The `visitedAt[u] >= start` test is the whole idea.** It's DFS's 3-color scheme compressed into one integer:
+
+| Condition | DFS equivalent | Meaning |
+|---|---|---|
+| `visitedAt[u] == 0` | white | unvisited, keep walking |
+| `visitedAt[u] >= start` | **gray** (on the current stack) | genuine back edge ⇒ **new cycle** |
+| `0 < visitedAt[u] < start` | black (finished earlier) | rejoined old territory, no new cycle |
+
+Without the `>= start` comparison you'd wrongly report a cycle every time one walk's tail merges into a cycle another walk already counted.
+
+**Time:** O(n) — each node is stamped exactly once across all walks, and each walk step is O(1).
+**Space:** O(n) for the stamp array. **No recursion**, which matters: a walk is O(n) deep by nature.
+
+### Never recurse on a walk
+
+A chain walk has depth equal to its length — up to 10⁵. Java has **no tail-call optimization**, so a recursive walk is a guaranteed `StackOverflowError` at problem-sized input, even when the recursion is a clean tail call. Empirically, a recursive walk over a 10⁵-node cycle dies; the iterative version returns instantly.
+
+The general rule: *is my recursion depth bounded by the input size, or by something smaller?* Balanced-tree DFS is O(log n) deep and fine. A linked list, a cycle, or any functional-graph walk is **O(n) deep, always** — write it as a loop.
+
+### When to use it
+
+Reach for the walk template when out-degree ≤ 1. It replaces:
+
+- **Kahn's peeling** — you don't need indegree counting to find cycle nodes; the walk finds them directly
+- **DFS 3-color** — the timestamp comparison encodes gray-vs-black
+- **A reverse graph** — nothing to reverse; forward walking is already deterministic
+
+**Note the general tools still work.** Peeling non-cycle nodes with Kahn's, then measuring what's left, is a perfectly correct LC 2360 solution — the functional structure just makes it unnecessary. Present the general approach, then say *"since out-degree is at most 1, I can skip the peel entirely"*: that's the volunteer-an-optimization step.
+
+**Related classics** worth knowing as the same family: Linked List Cycle II (LC 142) and Find the Duplicate Number (LC 287) are functional graphs solved with **Floyd's tortoise-and-hare** in O(1) space. Use Floyd's when you must not allocate; use timestamps when O(n) space is fine and you need *lengths* or *all* cycles.
+
+### Example problem — Longest Cycle in a Graph (LC 2360, Hard)
+
+> `edges[i]` is the single node `i` points to, or `-1`. Return the length of the longest cycle, or `-1` if there is none.
+
+Direct application: walk from every unstamped node, and whenever a walk closes on itself, the subtraction gives the length.
+
+```java
+public int longestCycle(int[] edges) {
+    int n = edges.length;
+    int[] visitedAt = new int[n];
+    int timer = 1, longest = -1;
+
+    for (int i = 0; i < n; i++) {
+        if (visitedAt[i] != 0) continue;
+        int start = timer, u = i;
+        while (u != -1 && visitedAt[u] == 0) {
+            visitedAt[u] = timer++;
+            u = edges[u];
+        }
+        if (u != -1 && visitedAt[u] >= start)          // closed within THIS walk
+            longest = Math.max(longest, timer - visitedAt[u]);
+    }
+    return longest;
+}
+```
+
+Initialize `longest = -1` so the "no cycle" case needs no special check.
+
+**Contrast — the Kahn's-peeling solution** (correct, and the right thing to mention first): count indegrees, peel every node that reaches 0 (those can't be on a cycle), then walk whatever survives, using `indegree[cur] > 0` as the visited marker so no extra array is needed.
+
+```java
+public int longestCycle(int[] edges) {
+    int n = edges.length;
+    int[] indegree = new int[n];
+    for (int u = 0; u < n; u++) if (edges[u] != -1) indegree[edges[u]]++;
+
+    Deque<Integer> queue = new ArrayDeque<>();
+    for (int u = 0; u < n; u++) if (indegree[u] == 0) queue.offer(u);
+    while (!queue.isEmpty()) {                   // peel everything not on a cycle
+        int v = edges[queue.poll()];
+        if (v != -1 && --indegree[v] == 0) queue.offer(v);
+    }
+
+    int longest = -1;
+    for (int u = 0; u < n; u++) {
+        if (indegree[u] <= 0) continue;
+        int len = 0, cur = u;
+        while (indegree[cur] > 0) { indegree[cur] = 0; len++; cur = edges[cur]; }
+        longest = Math.max(longest, len);
+    }
+    return longest;
+}
+```
+
+Both are O(n) time and space; the timestamp version is one pass with no queue.
+
+**Time:** O(n) **Space:** O(n)
+
+### Example problem — Array Nesting (LC 565, Medium)
+
+> `nums` is a **permutation** of `0..n-1`. `s[k] = {nums[k], nums[nums[k]], ...}` until it repeats. Return the longest such set.
+
+**Why permutation is the magic word:** a permutation is a *bijection*, so in-degree and out-degree are both exactly 1 — the graph is a **disjoint union of cycles with no tails**. Every element belongs to exactly one cycle, and `s[k]` *is* the cycle containing `k`. So the answer is just the longest cycle, and since there are no tails, a plain `boolean[]` suffices — no timestamps needed.
+
+```java
+public int arrayNesting(int[] nums) {
+    int n = nums.length;
+    boolean[] visited = new boolean[n];
+    int longest = 0;
+    for (int i = 0; i < n; i++) {
+        if (visited[i]) continue;
+        int len = 0, cur = i;
+        while (!visited[cur]) { visited[cur] = true; len++; cur = nums[cur]; }
+        longest = Math.max(longest, len);
+    }
+    return longest;
+}
+```
+
+**The key claim to state out loud:** total work is O(n), not O(n²), because each element is visited exactly once across *all* starts — a cycle already walked is skipped entirely. That's the only non-obvious thing here, and it's what the interviewer is checking.
+
+**Time:** O(n) **Space:** O(n)
+
+### Example problem — Circular Array Loop (LC 457, Medium)
+
+> `nums[i]` is a jump length; from index `i` you move to `(i + nums[i]) mod n`. Return whether a cycle exists with **length > 1** and **all jumps in the same direction** (all positive or all negative).
+
+**Why it's the tricky one:** the successor function is implicit *and* the cycle must satisfy two extra conditions. Fold both into `next()` so it returns `-1` on an invalid step, and the walk template carries on unchanged:
+
+```java
+private int next(int[] nums, int i, int n) {
+    int j = ((i + nums[i]) % n + n) % n;          // guard negative modulo
+    if (j == i) return -1;                         // self-loop ⇒ length 1, disallowed
+    if ((long) nums[j] * nums[i] < 0) return -1;   // direction flips
+    return j;
+}
+
+public boolean circularArrayLoop(int[] nums) {
+    int n = nums.length;
+    for (int i = 0; i < n; i++) {
+        if (nums[i] == 0) continue;                // already proven dead
+        int slow = i, fast = i;
+        while (true) {                              // Floyd's: fast moves 2, slow moves 1
+            slow = next(nums, slow, n);
+            if (slow == -1) break;
+            fast = next(nums, fast, n);
+            if (fast != -1) fast = next(nums, fast, n);
+            if (fast == -1) break;
+            if (slow == fast) return true;
+        }
+        int j = i, sign = nums[i];                  // this path failed — mark it dead
+        while (nums[j] != 0 && (long) nums[j] * sign > 0) {
+            int nj = ((j + nums[j]) % n + n) % n;
+            nums[j] = 0;
+            j = nj;
+        }
+    }
+    return false;
+}
+```
+
+**Three traps:** Java's `%` returns negative for negative operands, so `((x % n) + n) % n` is mandatory. The self-loop check enforces length > 1. And zeroing out the failed path keeps the total O(n) — without it you re-walk the same dead prefixes and it degrades toward O(n²).
+
+**Time:** O(n) **Space:** O(1) — Floyd's needs no stamp array.
+
+### Tips & tricks
+
+- **"Permutation of `0..n-1`" ⇒ disjoint cycles, no tails.** A `boolean[]` is enough; skip timestamps.
+- **`edges[i] = j` or `-1` ⇒ rho shape** (tail into a cycle). Timestamps needed to tell a fresh cycle from a re-entered old one.
+- **Never recurse on a walk.** O(n) depth, no TCO in Java, guaranteed overflow at 10⁵.
+- **Fold constraints into the successor function.** Direction limits, forbidden self-loops, bounds — return `-1` from `next()` and the template stays untouched.
+- **Mark failed paths dead.** Whether by zeroing or stamping, never re-walk a prefix you've already disproved, or O(n) becomes O(n²).
+- **O(1) space required?** Floyd's tortoise-and-hare (LC 142, LC 287). Otherwise timestamps are simpler and give you lengths.
+- **Reuse an existing array as the visited marker** where the problem permits (`indegree[cur] = 0`, `nums[j] = 0`) instead of allocating a parallel `boolean[]`.
+- **Ask what the input guarantees that you haven't used yet.** Out-degree ≤ 1 is exactly this kind of unused gift — the same instinct that collapses LC 3532 (sorted ⇒ contiguous components) down to one pass.
+
+---
+
+## 12. When to Use BFS vs When to Use DFS
 
 **The one-line rule:** the word "shortest" or "minimum steps" on an unweighted graph → BFS. "All / any / count / exists / detect structure" → DFS. Weighted shortest path → neither; that's Dijkstra.
 
@@ -1641,6 +2610,11 @@ public int[] findRedundantConnection(int[][] edges) {
 | Cycle detection in an *undirected* graph | **Union-Find** (or DFS) | A `union` returning false means the edge closes a cycle |
 | Enumerate all paths / backtracking / permutations | **DFS** | Call stack carries the current path for free |
 | Topological sort / cycle detection on a directed graph | **Either** — Kahn's (BFS) or DFS post-order | Kahn's counts processed nodes; DFS uses the 3-color back-edge check |
+| Every node has out-degree ≤ 1 (`edges[i]=j`, permutation, jump array) | **Functional-graph walk** (Section 11) | Deterministic successor ⇒ one `while` loop; no queue, no reverse graph |
+| Cycle detection with O(1) space on a functional graph | **Floyd's tortoise-and-hare** | No stamp array needed |
+| Connect all vertices at minimum total cost | **MST** — Kruskal (sparse/edge list) or Prim (dense) | Spanning tree, not shortest paths; the cut property, not the distance guarantee |
+| Complete graph built from points/coordinates | **Prim, O(V²) array form** | E ≈ V², so skip sorting and skip the heap |
+| "Which edges are in every / some MST?" | **Kruskal, ban-it and force-it probes** | Needs per-edge testing, which Prim can't express |
 | Bridges, articulation points, SCC | **DFS** | Needs DFS-tree structure (back edges, post-order) |
 | Longest path on a DAG / counting paths with a recurrence | **DFS + memo** | It's top-down DP in disguise |
 | Very deep graph (path-like), recursion risky | **BFS** or iterative DFS | Avoid stack overflow |
@@ -1673,6 +2647,11 @@ public int[] findRedundantConnection(int[][] edges) {
 | Dijkstra (min-heap) | O(E log V) | O(V + E) — dist + heap (up to O(E) entries) |
 | Dijkstra, augmented state (K-constraint) | O(E·K log(V·K)) | O(V·K) states |
 | Bellman-Ford (negative edges allowed) | O(V·E) | O(V) |
+| Functional-graph walk (timestamps) | O(n) | O(n) — stamp array, no recursion |
+| Floyd's tortoise-and-hare | O(n) | O(1) |
 | Union-Find (path compression + union by size) | O(α(n)) ≈ O(1) amortized per op | O(V) — parent + size arrays |
+| Kruskal MST (sort + DSU) | O(E log E) | O(V + E) |
+| Prim MST, heap | O(E log V) | O(V + E) |
+| Prim MST, array (dense) | O(V²) | O(V) — no edge list built |
 | Topological sort (Kahn's / DFS) | O(V + E) | O(V + E) — adj + indegree/state + queue/stack |
 | Topo sort, lexicographically smallest | O(V log V + E) | O(V + E) — PriorityQueue replaces the queue |
