@@ -207,22 +207,30 @@ event      heights (multiset)     lastKey   emit?
 public List<List<Integer>> getSkyline(int[][] buildings) {
     List<int[]> events = new ArrayList<>();
     for (int[] b : buildings) {
-        events.add(new int[]{b[0], -b[2]});  // start: negative height
-        events.add(new int[]{b[1],  b[2]});  // end:   positive height
+        events.add(new int[]{b[0], -b[2]});  // start: height stored NEGATIVE
+        events.add(new int[]{b[1],  b[2]});  // end:   height stored positive
     }
     events.sort((a, b) -> a[0] != b[0] ? a[0] - b[0] : a[1] - b[1]);
 
+    TreeMap<Integer, Integer> count = new TreeMap<>();  // live height -> how many buildings have it
+    count.put(0, 1);                                    // ground level, always present
+
     List<List<Integer>> res = new ArrayList<>();
-    TreeMap<Integer, Integer> heights = new TreeMap<>();
-    heights.put(0, 1);                                  // ground, never removed
     int prevMax = 0;
     for (int[] e : events) {
-        int h = e[1];
-        if (h < 0) heights.merge(-h, 1, Integer::sum);  // start → add
-        else       heights.merge(h, -1, Integer::sum);  // end   → remove
-        heights.values().removeIf(c -> c == 0);         // drop empty heights
-        int curMax = heights.lastKey();
-        if (curMax != prevMax) { res.add(List.of(e[0], curMax)); prevMax = curMax; }
+        int x = e[0], h = e[1];
+        if (h < 0) {                                     // building STARTS -> add height (-h)
+            int height = -h;
+            count.put(height, count.getOrDefault(height, 0) + 1);
+        } else {                                         // building ENDS -> remove height h
+            if (count.get(h) == 1) count.remove(h);      // last one at this height -> delete key
+            else count.put(h, count.get(h) - 1);         // others remain -> decrement
+        }
+        int curMax = count.lastKey();                    // tallest live height right now
+        if (curMax != prevMax) {                         // outline moved -> record it
+            res.add(List.of(x, curMax));
+            prevMax = curMax;
+        }
     }
     return res;
 }
@@ -232,6 +240,21 @@ public List<List<Integer>> getSkyline(int[][] buildings) {
 - Seed the multiset with `0` (ground) so the outline can drop back to zero and `lastKey()`
   is always defined.
 - Emit only when `lastKey()` *changes* — this is what collapses duplicate points.
+- **Delete a height the moment its count hits `0`** (the `if count == 1 -> remove` branch).
+  A stale `0`-count key is poison: `lastKey()` returns the largest *key* regardless of count,
+  so a dead height would masquerade as the max. Deleting inline also beats scrubbing the whole
+  map each event — `O(log n)` per step vs `O(n)`.
+- `getOrDefault(height, 0) + 1` is the plain-Java form of the "insert-or-increment" that
+  `merge(height, 1, Integer::sum)` does internally — same logic, nothing hidden.
+- If you prefer the terse `merge`: `count.merge(h, -1, (a, b) -> a + b == 0 ? null : a + b)`
+  — returning `null` from the remap function tells `merge` to delete the key, folding the
+  decrement-and-prune into one call. Slick, but the explicit `if/else` is easier to debug.
+
+**The negative-height trick.** Storing starts as `-h` packs three tie-breaks into one numeric
+sort: (1) start-before-end at the same `x` (negative sorts first → no false gap when one
+building begins where another ends); (2) among starts, taller first (one emit, not two);
+(3) among ends, shorter first (max only drops after the taller also leaves). A plain sort on
+`(x, value)` does all three.
 
 **Trick / variant.** Falling Squares (LC 699) is a cousin: instead of "max over active
 heights" you need "max height over an x-range as squares stack" — coordinate-compress x and
