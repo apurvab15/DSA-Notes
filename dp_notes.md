@@ -264,6 +264,324 @@ int numDecodings(String s) {                     int numDecodings(String s) {
 
 ---
 
+# Segmentation / Breakability DP
+
+**State:** `dp[i]` = something about the **prefix ending at `i`** (is it valid / how many ways / best value).
+**Transition:** enumerate a **split point `j < i`** — where the *last piece* starts — and combine "the prefix up to `j`" with "the piece `[j, i)`".
+
+**The shared skeleton (the O(n²) double loop to recognise):**
+
+```java
+dp[0] = BASE;                            // empty prefix
+for (int i = 1; i <= n; i++)             // end of the prefix
+    for (int j = 0; j < i; j++)          // split point: last piece is [j, i)
+        if (pieceIsValid(j, i))
+            dp[i] = COMBINE(dp[i], dp[j]);
+```
+
+Same **loop-inside-step** shape as Coin Change — the inner loop enumerates choices, except the "choices" are *where the last piece starts* rather than *which coin*. And it's the same **"reason about the last thing"** move as MCM / Burst Balloons, applied to a linear prefix instead of a range.
+
+**Recognition tell:** *"can I / how many ways / best way to **split** a sequence into valid pieces?"* → outer loop over end position, inner loop over where the last piece begins.
+
+**Knob checklist:** *type?* feasibility (`OR`, base `true`) · counting (`+`, base `1`) · optimizing (`max`/`min`, base per problem) · enumeration (collect lists, base `[""]`).
+
+---
+
+## Word Break  *(feasibility — the pure skeleton)*
+
+**Description:** Given a string `s` and a dictionary `wordDict`, return `true` if `s` can be segmented into a space-separated sequence of dictionary words (words reusable).
+
+**Example:** `s = "leetcode"`, `wordDict = ["leet","code"]` → `true` (`"leet code"`).
+
+**Intuition:** `dp[i]` = "can the prefix `s[0..i)` be fully segmented?" To decide `i`, ask where the **last word** starts. If it starts at `j`, then two things must hold: the prefix up to `j` is itself segmentable (`dp[j]`), and the piece `s[j..i)` is a dictionary word. Try every split `j` — if *any* works, `dp[i]` is true. Feasibility → combine with `OR`, base `dp[0] = true` (the empty prefix is trivially segmentable).
+
+> `dp[i] = OR over j < i of ( dp[j] AND s[j..i) ∈ dict )`
+
+**Concrete — `dp[8]` for `s = "leetcode"`, dict `["leet","code"]`:** where does the last word start?
+- `j=0` → piece `"leetcode"` — not in dict ✗
+- `j=1` → piece `"eetcode"` ✗ … (all fail) …
+- `j=4` → piece `"code"` ✓ **and** `dp[4]` is true (because `"leet"` matched earlier) → **`dp[8] = true`** ✓
+- `j=5,6,7` → `"ode"`, `"de"`, `"e"` ✗
+
+One working split is enough — feasibility short-circuits.
+
+**Signature to remember:** `dp[j] && dict.contains(s[j..i))`, OR over all `j`; base `dp[0] = true`.
+
+**Type / knobs:** feasibility (`OR`) · split-point enumeration · impossible → just `false` (no sentinel).
+
+**Time:** O(n² · L) — n² splits × O(L) substring/hash. (→ O(n · maxLen · L) with the length cap, see tips.)
+**Space:** O(n) for `dp` + O(dict) for the set.
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(n^2)
+boolean wordBreak(String s, List<String> wd) {   Boolean[] memo;
+    Set<String> dict = new HashSet<>(wd);        boolean wordBreak(String s, List<String> wd) {
+    return dfs(s, dict, 0);                          Set<String> dict = new HashSet<>(wd);
+}                                                    memo = new Boolean[s.length()];
+                                                     return dfs(s, dict, 0);
+// can the SUFFIX from `start` be segmented?     }
+boolean dfs(String s, Set<String> d, int start) { boolean dfs(String s, Set<String> d, int start) {
+    if (start == s.length()) return true; //done      if (start == s.length()) return true;
+                                                      if (memo[start] != null) return memo[start]; //hit
+    for (int end = start+1; end <= s.length();        for (int end = start+1; end <= s.length(); end++)
+                            end++)                        if (d.contains(s.substring(start, end))
+        if (d.contains(s.substring(start, end))               && dfs(s, d, end, memo))
+            && dfs(s, d, end))                                return memo[start] = true;
+            return true;                              return memo[start] = false;
+    return false;                                }
+}
+```
+*(The recursion uses a **suffix** state — "can the rest from `start` be segmented?" — which is the natural top-down phrasing. The tabulation below flips to the prefix convention.)*
+
+### Tabulation  *(prefix convention, the standard form)*
+
+```java
+boolean wordBreak(String s, List<String> wordDict) {
+    Set<String> dict = new HashSet<>(wordDict);   // O(1) lookups — the biggest win
+    int n = s.length();
+
+    boolean[] dp = new boolean[n + 1];
+    dp[0] = true;                                 // BASE: empty prefix is segmentable
+
+    for (int i = 1; i <= n; i++) {                // i = end of the prefix we're deciding
+        for (int j = 0; j < i; j++) {             // j = where the LAST word starts
+            // "prefix up to j is segmentable"  AND  "the piece s[j..i) is a word"
+            if (dp[j] && dict.contains(s.substring(j, i))) {
+                dp[i] = true;
+                break;                            // one valid split is enough (feasibility)
+            }
+        }
+    }
+    return dp[n];                                 // whole string segmentable?
+}
+```
+
+**How to read the tabulation:** the outer `i` walks the prefix end left→right; every `dp[j]` for `j < i` is already final when you need it (backward recurrence → fill low→high). The inner `j` asks *"where does the last word start?"* — and the guard is the literal recurrence: `dp[j]` (rest is fine) `&&` piece is a word. The `break` is a feasibility short-circuit, not an optimization of correctness.
+
+**Tips:**
+- **`HashSet` for the dictionary** — O(1) lookups. Biggest single win.
+- **Cap the inner loop by the longest word:** start `j` at `max(0, i - maxLen)`. A piece longer than the longest dictionary word can never match, so this often turns O(n²) into O(n · maxLen).
+- A **Trie** avoids `substring()` allocations entirely (walk the trie from `j` forward) — worth mentioning as a follow-up optimization.
+- Feasibility handles "impossible" for free: the answer is just `false`.
+
+**Trick / clever variant:** none needed — but note it's a **reachability** problem (can I reach index `n` by jumping along dictionary words), so a BFS over reachable indices with a `visited` set is an equivalent formulation.
+
+---
+
+## Word Break II  *(enumeration — collect all sentences)*
+
+**Description:** Same as Word Break, but return **all** possible sentences (every valid segmentation), not just whether one exists.
+
+**Example:** `s = "catsanddog"`, dict `["cat","cats","and","sand","dog"]` → `["cats and dog", "cat sand dog"]`.
+
+**Intuition:** This one **breaks the scalar-`dp[]` mould** — you're returning a *list of strings* per state, not a number or boolean. So it's **memoized backtracking**: `dfs(start)` = the list of all sentences that can be formed from the **suffix** `s[start..]`. Take every dictionary word that matches at `start`, recursively get all completions of the remainder, and prefix that word onto each. Base case: reaching the end returns `[""]` — *one* empty completion (the enumeration analogue of counting's `1`).
+
+> `dfs(start) = for each word w matching at start: { w + " " + sub  |  sub ∈ dfs(start + w.length) }`
+
+**Concrete — `dfs(0)` for `"catsanddog"`:** which word starts the sentence?
+- `"cat"` matches → `dfs(3)` on `"sanddog"` → returns `["sand dog"]` → yields `"cat sand dog"`
+- `"cats"` matches → `dfs(4)` on `"anddog"` → returns `["and dog"]` → yields `"cats and dog"`
+- no other prefix of `"catsanddog"` is in the dict
+
+Union → `["cat sand dog", "cats and dog"]`. Note `dfs(7)` (`"dog"` onward) is reached from *both* branches — memoizing it is exactly the saving.
+
+**Signature to remember:** memoized backtracking on a **suffix** state, returning `List<String>`; base = `[""]`.
+
+**Type / knobs:** enumeration (collect lists) · suffix state · memo is `Map<Integer, List<String>>`.
+
+**Time:** O(n² · L) to build + **output-sized** (the answer set can be exponential — unavoidable).
+**Space:** O(n · output) for the memo.
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential, recomputes)      // ── MEMO ── caches per start index
+List<String> wordBreak(String s, List<String> wd){ Map<Integer, List<String>> memo = new HashMap<>();
+    Set<String> dict = new HashSet<>(wd);         List<String> wordBreak(String s, List<String> wd) {
+    return dfs(s, dict, 0);                           Set<String> dict = new HashSet<>(wd);
+}                                                     return dfs(s, dict, 0);
+                                                  }
+List<String> dfs(String s, Set<String> d,         List<String> dfs(String s, Set<String> d, int st) {
+                 int st) {                            if (memo.containsKey(st)) return memo.get(st);
+    List<String> res = new ArrayList<>();             List<String> res = new ArrayList<>();
+    if (st == s.length()) {                           if (st == s.length()) {
+        res.add("");   // one empty completion            res.add("");
+        return res;                                       return res;
+    }                                                 }
+    for (int e = st+1; e <= s.length(); e++) {        for (int e = st+1; e <= s.length(); e++) {
+        String w = s.substring(st, e);                    String w = s.substring(st, e);
+        if (!d.contains(w)) continue;                     if (!d.contains(w)) continue;
+        for (String sub : dfs(s, d, e))                   for (String sub : dfs(s, d, e))
+            res.add(w + (sub.isEmpty()                        res.add(w + (sub.isEmpty()
+                         ? "" : " " + sub));                               ? "" : " " + sub));
+    }                                                 }
+    return res;                                       memo.put(st, res);
+}                                                     return res;
+                                                  }
+```
+
+**No clean tabulation.** You *could* fill `List<String>[] dp` right-to-left, but the memoized recursion is the standard, clearer form here — the state's value is a collection, not a scalar to accumulate.
+
+**Tips:**
+- **Run Word Break I first as a feasibility filter.** If `dp[n]` is false, return an empty list immediately. Without it, adversarial inputs like `"aaaa…aaab"` with dict `{a, aa, aaa}` explode exploring doomed branches. This is the key optimization.
+- Base returns `[""]` (a list containing one empty string), **not** an empty list — an empty list would mean "no way to finish" and kill every branch.
+- The `sub.isEmpty()` check avoids a trailing space on the last word.
+- Memo is keyed on `start` only (the dictionary and string are fixed), so `Map<Integer, List<String>>`.
+
+**Trick / clever variant:** **feasibility pre-check** (run Word Break I, bail early) — turns a potential exponential blow-up into a fast fail.
+
+---
+
+## Integer Break  *(optimizing — plus a clean greedy)*
+
+**Description:** Given `n`, break it into **at least two** positive integers summing to `n`, and maximize their product. Return the max product.
+
+**Example:** `n = 10` → `36` (`10 = 3 + 3 + 4`, product `3·3·4 = 36`).
+
+**Intuition:** `dp[i]` = max product from breaking `i` into **two or more** parts. Split off a first piece `j`, leaving `i - j`. Then you have two options for the remainder — **leave it whole** (`j * (i-j)`, exactly two pieces) or **break it further** (`j * dp[i-j]`). Take the best over both, over every `j`:
+
+> `dp[i] = max over j in [1, i-1] of ( max( j * (i-j),  j * dp[i-j] ) )`
+
+**⚠️ Why both terms:** the problem demands *at least two* parts, so `dp[i-j]` (which assumes the remainder gets broken) isn't always right — sometimes leaving the remainder whole is better. E.g. `dp[3] = 2` (from `1+2`), but leaving 3 **whole** gives 3 — bigger. Missing the `j * (i-j)` term is the classic bug.
+
+**Concrete — `dp[4]`:** try each first piece `j`:
+- `j=1` → `max(1·3, 1·dp[3]=1·2) = 3`
+- `j=2` → `max(2·2, 2·dp[2]=2·1) = 4`
+- `j=3` → `max(3·1, 3·dp[1]=3·1) = 3`
+
+Max → `dp[4] = 4` (i.e. `2+2`). Notice `j=1` and `j=2` both won via the *leave-whole* term, not the break-further term.
+
+**Signature to remember:** `dp[i] = max_j( max( j*(i-j), j*dp[i-j] ) )` — the inner `max` is "leave the rest whole vs break it further."
+
+**Type / knobs:** optimizing (`max`) · split-point enumeration · **at-least-two-parts** semantics forces the two-term inner max.
+
+**Time:** O(n²) DP · **O(n) or O(log n) greedy**.
+**Space:** O(n) DP · O(1) greedy.
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(n^2)
+int integerBreak(int n) {                        Integer[] memo;
+    return solve(n);                             int integerBreak(int n) {
+}                                                    memo = new Integer[n + 1];
+                                                     return solve(n);
+// max product from breaking i (>= 2 parts)      }
+int solve(int i) {                               int solve(int i) {
+    if (i == 1) return 1;                            if (i == 1) return 1;
+    int best = 0;                                    if (memo[i] != null) return memo[i];   // hit
+    for (int j = 1; j < i; j++)                      int best = 0;
+        best = Math.max(best,                        for (int j = 1; j < i; j++)
+               Math.max(j * (i - j),      //whole        best = Math.max(best,
+                        j * solve(i - j)));//break              Math.max(j * (i - j),
+    return best;                                                     j * solve(i - j)));
+}                                                    return memo[i] = best;
+                                                 }
+```
+
+### Tabulation
+
+```java
+int integerBreak(int n) {
+    int[] dp = new int[n + 1];
+    dp[1] = 1;                                    // BASE: 1 can't be broken; as a factor it's 1
+
+    for (int i = 2; i <= n; i++) {                // build every value up to n
+        for (int j = 1; j < i; j++) {             // j = the first piece we split off
+            dp[i] = Math.max(dp[i],
+                    Math.max(j * (i - j),         // (a) leave the remainder WHOLE  -> exactly 2 parts
+                             j * dp[i - j]));     // (b) BREAK the remainder further -> 3+ parts
+        }
+    }
+    return dp[n];
+}
+```
+
+**How to read the tabulation:** `i` walks upward so every `dp[i-j]` is already final (backward recurrence → fill low→high). The inner `j` enumerates the first piece. The two-term inner `max` is the whole subtlety — **(a)** covers "exactly two pieces," **(b)** covers "keep breaking." Dropping (a) under-counts cases where the remainder is better left intact.
+
+**Tips:**
+- **Two-term inner max is mandatory** (`j*(i-j)` vs `j*dp[i-j]`) because the problem requires ≥2 parts — `dp[i-j]` alone assumes the remainder is broken.
+- `dp[1] = 1` is a *factor* convention (1 used as a multiplier), not "the answer for n=1" — `integerBreak(1)` isn't a valid input anyway.
+- Edge cases: `n=2` → 1 (`1+1`), `n=3` → 2 (`1+2`). The greedy below special-cases these.
+
+**Trick / clever variant (greedy / math, O(n) → O(log n)):** **break `n` into as many 3s as possible.** 3 maximizes product-per-unit, so `3^(n/3)` beats other splits. Special case: if the remainder would be **1**, use `2+2` instead of `3+1` (since `2·2=4 > 3·1=3`).
+
+```java
+int integerBreak(int n) {
+    if (n == 2) return 1;                 // 1+1
+    if (n == 3) return 2;                 // 1+2
+    int product = 1;
+    while (n > 4) {                       // keep peeling 3s while a good remainder is left
+        product *= 3;
+        n -= 3;
+    }
+    return product * n;                   // n is now 2, 3, or 4 — leave it whole
+}
+```
+
+Stopping at `n > 4` is what handles the remainder-1 case automatically: a leftover of 4 stays as `4` (= `2+2`) rather than becoming `3+1`. With fast exponentiation this is O(log n).
+
+---
+
+## Filling Bookcase Shelves  *(optimizing — piece cost = max over the piece)*
+
+**Description:** Books must be placed **in order** onto shelves of width `shelfWidth`. Each shelf holds a **contiguous** run of books whose total thickness ≤ `shelfWidth`; that shelf's height is the **max height** of its books. Minimize the total bookcase height (sum of shelf heights).
+
+**Example:** `books = [[1,1],[2,3],[2,3],[1,1],[1,1],[1,1],[1,2]]`, `shelfWidth = 4` → `6` (three shelves, heights 1 + 3 + 2).
+
+**Intuition:** Because books stay in order and each shelf is a contiguous run, a solution is just a way to **cut the ordered sequence into contiguous groups** (shelves) — pure segmentation. `dp[i]` = min bookcase height for the **first `i` books**. To place the first `i`, the **last shelf** holds some contiguous run `[j+1 .. i]` (total thickness ≤ `shelfWidth`); its height is the max height in that run, and everything before is already solved (`dp[j]`). Enumerate where the last shelf starts by walking `j` **backward from `i`**, accumulating width and max-height, stopping when width overflows.
+
+> `dp[i] = min over valid j of ( dp[j] + maxHeight(books[j+1 .. i]) )`
+
+**Concrete — `dp[3]` for `books = [[1,1],[2,3],[2,3]]`, shelfWidth 4:** where does the last shelf start?
+- last shelf = book 3 `[2,3]` (width 2 ≤ 4): `dp[2] + 3`
+- last shelf = books 2,3 (width 4 ≤ 4): `dp[1] + max(3,3) = dp[1] + 3`
+- last shelf = books 1,2,3 (width 5 > 4): **stop** — doesn't fit, and no earlier start fits either
+
+Take the min over valid options.
+
+**Signature to remember:** segmentation over a *contiguous* prefix; last piece = last shelf; **piece cost = max height of the books on it** (computed while extending); width overflow → `break`.
+
+**Type / knobs:** optimizing (`min`) · split-point enumeration (last shelf) · piece validity = width ≤ `shelfWidth` · piece cost = `max` height over the run.
+
+**Time:** O(n²) — each `i` scans back over prior books.
+**Space:** O(n).
+
+### Tabulation
+
+```java
+int minHeightShelves(int[][] books, int shelfWidth) {
+    int n = books.length;
+    int[] dp = new int[n + 1];
+    dp[0] = 0;                                   // BASE: no books -> height 0
+
+    for (int i = 1; i <= n; i++) {               // i = prefix end (first i books placed)
+        dp[i] = Integer.MAX_VALUE;
+        int width = 0, height = 0;
+        for (int j = i; j >= 1; j--) {           // j = first book on the LAST shelf; walk backward
+            width += books[j - 1][0];            // accumulate the shelf's thickness
+            if (width > shelfWidth) break;       // shelf full -> no earlier start fits either (prune)
+            height = Math.max(height, books[j - 1][1]);   // shelf height = tallest book on it
+            dp[i] = Math.min(dp[i], dp[j - 1] + height);  // rest (dp[j-1]) + this shelf's height
+        }
+    }
+    return dp[n];
+}
+```
+
+**How to read it:** identical segmentation skeleton to Word Break — outer `i` over the prefix end, inner `j` over where the last piece starts — but two things differ: (1) the piece **cost** isn't a flat `+1`, it's the running `max` height of the shelf, accumulated as you extend `j` leftward; (2) the width monotonically grows as the shelf gets wider, so once it overflows you can **`break`** (no earlier start could fit) — a prune Word Break doesn't have.
+
+**Tips:**
+- **Walk `j` backward from `i`** so you can accumulate the last shelf's width and max-height incrementally; the `break` on overflow prunes the inner loop.
+- The piece cost being **`max` over the run** (not a constant) is the one wrinkle vs. Word Break / Integer Break — the "is this piece valid?" *and* "what does this piece cost?" are both computed while extending.
+- **Greedy fails here** — you can't just fill each shelf as full as possible; leaving a shelf early can lower total height (the example's book 2 doesn't go on shelf 1). Must DP over all split points.
+
+**Trick / clever variant:** none — it's the segmentation skeleton with a `max`-over-the-piece cost and a width-overflow `break`. Closest cousin: **Partition Array for Maximum Sum** (contiguous batches, each contributing `max × length`).
+
+---
+
 # 2D String DP
 
 The shared shape: a table `dp[i][j]` over two strings, filled row by row. Match does one thing (usually the diagonal), mismatch does another (best of the neighbours). LCS is the template; Edit Distance and most string problems are variations on it.
@@ -484,6 +802,120 @@ int edit(String a, String b) {                   int edit(String a, String b) {
 
 ---
 
+## Regular Expression Matching  *(hard — semantics-heavy)*
+
+**Description:** Implement regex matching for `.` (matches any single char) and `*` (matches **zero or more** of the *preceding* element). The match must cover the **entire** string.
+
+**Example:** `s = "aab"`, `p = "c*a*b"` → `true`. `c*` takes zero `c`s, `a*` takes two `a`s, then `b` matches `b`.
+
+**Intuition:** `dp[i][j]` = do the **first `i` chars of `s`** match the **first `j` chars of `p`**? Feasibility → `OR`, base `dp[0][0] = true`. Two cases on the current pattern char `p[j-1]`:
+
+- **Not a star** — plain single-char match. If `p[j-1]` is `.` or equals `s[i-1]`, consume both → `dp[i][j] = dp[i-1][j-1]` (diagonal, like LCS's match). Otherwise `false`.
+- **Is a star** — the star applies to `p[j-2]`, so `p[j-2..j-1]` is one `x*` unit with **two** choices:
+  - **(a) zero occurrences** → throw the whole unit away: `dp[i][j-2]`. *(Always available — `x*` can vanish.)*
+  - **(b) one more occurrence** → if `p[j-2]` matches `s[i-1]`, consume that one char but **keep the pattern**: `dp[i-1][j]`. *(The star can keep matching, so `j` doesn't move.)*
+  - `OR` them.
+
+> `dp[i][j] = dp[i][j-2]  OR  ( p[j-2] matches s[i-1]  AND  dp[i-1][j] )`   *(star case)*
+> `dp[i][j] = p[j-1] matches s[i-1]  AND  dp[i-1][j-1]`   *(non-star case)*
+
+**⚠️ The base ROW is the real trap:** `dp[0][j]` = "can the **empty string** match this pattern prefix?" Only if every element can vanish, i.e. patterns like `a*b*c*`. So when `p[j-1] == '*'`, drop the whole pair: `dp[0][j] = dp[0][j-2]`. Leaving this row all-false breaks `s=""`, `p="a*"` — and, more subtly, breaks deeper cells too (the star's `dp[i][j-2]` chains back into row 0).
+
+**Concrete — the base row for `p = "a*b*"`** (seeded by `dp[0][0] = true`):
+- `j=1`: `p[0]='a'`, not `*` → `dp[0][1] = false` (empty can't match `"a"`)
+- `j=2`: `p[1]='*'` → `dp[0][2] = dp[0][0] = **true**` (`"a*"` takes zero `a`s)
+- `j=3`: `p[2]='b'`, not `*` → `dp[0][3] = false` (`"a*b"` needs a literal `b`)
+- `j=4`: `p[3]='*'` → `dp[0][4] = dp[0][2] = **true**` (`"a*b*"` — zero of each)
+
+Row = `[T, F, T, F, T]`. The `true`s hop forward in steps of 2, each `x*` pair passing the torch; a literal char kills the chain (correctly).
+
+**Concrete — the star's two branches, `s="aa"`, `p="a*"`:** at `dp[2][2]`, `p[1]='*'` applies to `p[0]='a'`.
+- (a) zero `a`s → `dp[2][0]` = false (non-empty `s` vs empty `p`)
+- (b) `'a'` matches `s[1]='a'` → `dp[1][2]` = true (one fewer `s` char, same pattern)
+→ `dp[2][2] = true` ✓
+
+**Signature to remember:** star = `zero (dp[i][j-2])  OR  one-more (dp[i-1][j] if chars match)`. Zero-case moves `j` back **2**; one-more-case moves `i` back **1** and leaves `j` alone.
+
+**Type / knobs:** feasibility (`OR`) · 2D prefix grid · **star is the whole difficulty** (2-wide pattern unit + a non-trivial base row).
+
+**Time:** O(m·n).
+**Space:** O(m·n) memo/tabulation · O(n) two-row (needs `dp[i][j-2]`, which the current row supplies).
+
+### Recurrence ‖ Memo
+
+```java
+// ── RECURRENCE ── (exponential)                  // ── MEMO ── O(m·n)
+boolean isMatch(String s, String p) {            Boolean[][] memo;
+    return dfs(s, p, 0, 0);                      boolean isMatch(String s, String p) {
+}                                                    memo = new Boolean[s.length()+1][p.length()+1];
+                                                     return dfs(s, p, 0, 0);
+// do s[i..] and p[j..] match?                   }
+boolean dfs(String s, String p, int i, int j) {  boolean dfs(String s, String p, int i, int j) {
+    if (j == p.length()) return i == s.length();     if (j == p.length()) return i == s.length();
+                                                     if (memo[i][j] != null) return memo[i][j]; //hit
+    boolean first = i < s.length() &&                boolean first = i < s.length() &&
+        (p.charAt(j)=='.' ||                             (p.charAt(j)=='.' ||
+         p.charAt(j)==s.charAt(i));                       p.charAt(j)==s.charAt(i));
+
+    if (j+1 < p.length()                             if (j+1 < p.length()
+        && p.charAt(j+1)=='*') {                         && p.charAt(j+1)=='*')
+        return dfs(s,p,i,j+2)      // zero              return memo[i][j] = dfs(s,p,i,j+2,memo)
+            || (first                                       || (first
+                && dfs(s,p,i+1,j)); // one more                  && dfs(s,p,i+1,j,memo));
+    }                                                return memo[i][j] =
+    return first && dfs(s,p,i+1,j+1);                    first && dfs(s,p,i+1,j+1,memo);
+}                                                }
+```
+*(The recursion uses a **suffix** state — "do the rests match?" — which is the natural top-down phrasing. Tabulation below flips to the prefix convention.)*
+
+### Tabulation  *(prefix convention, low → high)*
+
+```java
+boolean isMatch(String s, String p) {
+    int m = s.length(), n = p.length();
+    boolean[][] dp = new boolean[m + 1][n + 1];
+
+    dp[0][0] = true;                              // empty matches empty
+
+    // BASE ROW: empty s vs p[0..j). Only "x*y*z*" patterns can vanish entirely.
+    for (int j = 1; j <= n; j++)
+        if (p.charAt(j - 1) == '*')
+            dp[0][j] = dp[0][j - 2];              // drop the whole "x*" pair
+    // (dp[i][0] stays false for i >= 1: non-empty s can't match empty p)
+
+    for (int i = 1; i <= m; i++) {
+        for (int j = 1; j <= n; j++) {
+            char pc = p.charAt(j - 1);
+
+            if (pc == '*') {
+                // star applies to p[j-2]; the unit is p[j-2..j-1]
+                dp[i][j] = dp[i][j - 2];                     // (a) ZERO occurrences: skip the unit
+                char prev = p.charAt(j - 2);
+                if (prev == '.' || prev == s.charAt(i - 1))
+                    dp[i][j] |= dp[i - 1][j];                // (b) ONE MORE: eat s[i-1], keep pattern
+            } else {
+                if (pc == '.' || pc == s.charAt(i - 1))
+                    dp[i][j] = dp[i - 1][j - 1];             // plain match -> diagonal
+                // else stays false
+            }
+        }
+    }
+    return dp[m][n];
+}
+```
+
+**How to read the tabulation:** the base row is computed **first and separately** — it must exist before any cell chains back to it via `dp[i][j-2]`. Then `i` and `j` both walk low→high, which is valid because every dependency (`dp[i-1][j-1]`, `dp[i-1][j]`, `dp[i][j-2]`) has smaller-or-equal indices in both coordinates. Note `dp[i][j-2]` reads the **current** row (same `i`, earlier `j`) — already filled this pass.
+
+**Tips:**
+- **No bounds check needed on `j-2`** — a valid pattern never *starts* with `'*'`, so `p[j-1]=='*'` guarantees `j >= 2`.
+- **Loop order is free here** (`i` outer or `j` outer both work — all dependencies go down-and-left), but keep `i` outer for cache locality and easier two-row space-opt. Just keep the base-row init outside and before the nested loops.
+- The **zero-occurrence branch is unconditional** — `x*` can always vanish. The **one-more branch is gated** on the char actually matching.
+- Contrast **Wildcard Matching** (`?` and `*`), where `*` matches any *sequence* on its own (no preceding element) — that one's simpler: `dp[i][j] = dp[i-1][j] || dp[i][j-1]` for `*`.
+
+**Trick / clever variant:** none — this is a pure semantics problem. The whole difficulty is (1) the star being a **2-char unit** (`x*`), (2) its **two branches** (zero vs one-more), and (3) the **base row** letting `x*` chains vanish.
+
+---
+
 ## Longest Common Substring
 
 **Description:** Given two strings `a` and `b`, return the length of the longest **substring** (contiguous) common to both.
@@ -582,89 +1014,180 @@ int solve(int[] nums, int i) {                   }
 }                                                }
 ```
 
-### Tabulation ‖ Patience sorting (O(n log n), the clever variant)
+### Tabulation (O(n²))
 
 ```java
-// ── TABULATION O(n^2) ──                          // ── PATIENCE SORTING O(n log n) ──
-int lengthOfLIS(int[] nums) {                    int lengthOfLIS(int[] nums) {
-    int n = nums.length;                             int[] tails = new int[nums.length];
-    int[] dp = new int[n];                           int size = 0;   // length of LIS so far
-    Arrays.fill(dp, 1);  // each alone = 1
-    int best = 1;                                    for (int x : nums) {
-    for (int i = 0; i < n; i++) {                        int lo = 0, hi = size;
-        for (int j = 0; j < i; j++)                      while (lo < hi) {        // first tail >= x
-            if (nums[j] < nums[i])                           int mid = (lo + hi) / 2;
-                dp[i] = Math.max(dp[i], dp[j]+1);            if (tails[mid] < x) lo = mid + 1;
-        best = Math.max(best, dp[i]);                        else hi = mid;
-    }                                                    }
-    return best;                                         tails[lo] = x;   // extend or replace
-}                                                        if (lo == size) size++;
-                                                     }
-                                                     return size;
-                                                 }
+int lengthOfLIS(int[] nums) {
+    int n = nums.length;
+    int[] dp = new int[n];
+    Arrays.fill(dp, 1);          // each element alone = length 1
+    int best = 1;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < i; j++)          // scan ALL earlier elements
+            if (nums[j] < nums[i])           // can extend from j?
+                dp[i] = Math.max(dp[i], dp[j] + 1);
+        best = Math.max(best, dp[i]);        // answer can end anywhere
+    }
+    return best;
+}
 ```
 
 **Tips:**
 - **Answer = max over all `dp[i]`, NOT `dp[n-1]`** — the longest chain can end anywhere (same "ending here" trap as Maximal Square / Kadane). #1 LIS mistake.
 - **Strict vs non-strict:** `nums[j] < nums[i]` for *strictly* increasing; use `<=` for non-decreasing. Read the problem carefully (semantics check).
-- **Patience sorting (O(n log n)):** `tails[k]` = smallest possible tail of an increasing subsequence of length `k+1`. For each `x`, binary-search the first tail `>= x` and overwrite it (or append if `x` is bigger than all). The **length of `tails` is the LIS length** — but note `tails` itself is *not* a valid subsequence, just a bookkeeping array. Use "first tail `>= x`" (lower bound) for strict; "first `> x`" (upper bound) for non-decreasing.
+- Base case is `1` for every element (each is a length-1 subsequence by itself), not 0.
 
-**Trick / clever variant:** **patience sorting / binary search → O(n log n)** (shown above). The insight: maintain the smallest tail per subsequence length; a new element either extends the longest pile or improves (lowers) an existing tail.
+**Trick / clever variant:** **patience sorting → O(n log n)** — see the next subsection.
 
 ---
 
-## Russian Doll Envelopes
+## Patience Sort  *(the O(n log n) LIS trick)*
 
-**Description:** Each envelope is `[width, height]`. Envelope A fits inside B only if **both** `A.width < B.width` and `A.height < B.height` (strict). Return the max number of envelopes you can nest (Russian-doll).
+**What it's for:** computing the **length** of the LIS in `O(n log n)` instead of `O(n²)`. Used directly in LIS, and in anything that reduces to LIS (e.g. Russian Doll Envelopes, where `n` is large enough that O(n²) may TLE).
+
+**The key object — `tails`.** A *"tail"* is just the **last element** of a subsequence. Only the tail matters for extending it: a **smaller tail dominates**, because anything that can extend a subsequence ending in 5 can also extend one ending in 2. So you only ever need to remember the *smallest* tail per length:
+
+> `tails[k]` = the smallest value a length-**(k+1)** increasing subsequence can end with.
+> (`k` is just the array index; the `+1` is 0-indexing.)
+> `size` = how many slots are meaningful = **the LIS length so far**.
+
+`tails` is always sorted ascending (a longer subsequence must end higher than a shorter one), which is what makes binary search valid.
+
+**What you do for each `x` — two steps:**
+
+**1. Find where `x` belongs.** Binary-search `tails` for the **first slot whose tail is `≥ x`**. You're asking: *"is there a length whose current best ending is too big, such that `x` would be a better ending for that same length?"*
+
+**2. Interpret where you landed** — exactly two cases:
+- **`lo < size` → REPLACE** (`tails[lo] = x`). You found a length whose best ending was bigger than `x`, so `x` is a *better* (smaller) ending for that same length. Nothing got longer → **`size` unchanged**. Think of it as an *upgrade*: a lower ending makes future extensions easier.
+- **`lo == size` → APPEND** (`tails[size] = x`, `size++`). `x` beat *every* tail, so it extends the longest chain you have. **This is the only event that grows the LIS.**
+
+Both cases are the same line of code (`tails[lo] = x`) — the binary search already decided which. The `if (lo == size) size++;` is what distinguishes them.
+
+> **Per-`x` narrative:** *"Where does `x` fit? If it's bigger than everything I have, it extends my longest chain — append and grow. Otherwise it's a better ending for a length I already had — overwrite that slot, same length, better position for the future."*
+
+**Dry run — `nums = [3, 1, 4, 2, 5]`** (answer 3):
+
+| `x` | `lo` | `lo == size`? | action | `tails` | `size` |
+|---|---|---|---|---|---|
+| 3 | 0 | 0 == 0 ✓ | APPEND | `[3]` | 0 → 1 |
+| 1 | 0 | 0 == 1 ✗ | replace | `[1]` | 1 |
+| 4 | 1 | 1 == 1 ✓ | APPEND | `[1,4]` | 1 → 2 |
+| 2 | 1 | 1 == 2 ✗ | replace | `[1,2]` | 2 |
+| 5 | 2 | 2 == 2 ✓ | APPEND | `[1,2,5]` | 2 → 3 |
+
+Three appends → `size = 3`. ✓
+
+Read the replacements as **upgrades**: `1` overwriting `3` says *"a length-1 subsequence ending in 1 beats one ending in 3"*; `2` overwriting `4` says *"`[1,2]` beats `[1,4]`"* — and that upgrade is exactly what let `5` append cleanly. **Replacements are investments in future appends.**
+
+### Code
+
+```java
+int lengthOfLIS(int[] nums) {
+    int[] tails = new int[nums.length];   // tails[k] = smallest tail for length k+1
+    int size = 0;                         // meaningful slots = LIS length so far
+
+    for (int x : nums) {
+        int lo = 0, hi = size;            // search only the meaningful region
+        while (lo < hi) {                 // lower bound: first tail >= x
+            int mid = (lo + hi) / 2;
+            if (tails[mid] < x) lo = mid + 1;   // x can extend this -> go right
+            else hi = mid;                      // candidate -> keep it in window
+        }
+        tails[lo] = x;                    // REPLACE (lo < size) or APPEND (lo == size)
+        if (lo == size) size++;           // only appending grows the LIS
+    }
+    return size;
+}
+```
+
+**Line roles:**
+- `hi = size` (**not** `size-1`) — makes `size` a valid landing spot, which is how "bigger than everything → append" gets expressed. Slots at index `≥ size` are stale garbage from earlier writes.
+- `tails[mid] < x` (strict) → **lower bound** (first tail `≥ x`) → **strictly increasing** LIS. Change to `<=` for **non-decreasing** (upper bound, so equal values append instead of replace). That one character is the strict/non-strict knob.
+- `else hi = mid` (**not** `mid-1`) — a candidate must stay in the window, or you'd overshoot past the *first* qualifying slot.
+
+**Time:** O(n log n) — `n` elements × O(log n) binary search.
+**Space:** O(n) for `tails`.
+
+**⚠️ `tails` is NOT a real subsequence.** For `[2,6,8,3,4,5,1]` you end with `tails = [1,3,4,5]`, but the `1` sits at the *last* input index — not a valid subsequence at all. The **length** is correct; the array is only bookkeeping. To reconstruct the actual LIS, track predecessor indices separately.
+
+---
+
+## Russian Doll Envelopes  *(LIS + patience sort in disguise)*
+
+**Description:** Each envelope is `[width, height]`. Envelope A fits inside B only if **both** `A.width < B.width` and `A.height < B.height` (strict). Return the max number you can nest.
 
 **Example:** `envelopes = [[5,4],[6,4],[6,7],[2,3]]` → `3`. Nesting: `[2,3] → [5,4] → [6,7]`.
 
-**Intuition (LIS in disguise):** It's 2D nesting, but you can collapse one dimension by **sorting**. Sort by **width ascending**; for ties (equal width), sort by **height descending**. After sorting, width is non-decreasing left-to-right, so any strictly-increasing chain of *heights* automatically has strictly-increasing widths too — **except** equal-width pairs, which the descending-height tie-break prevents from both being chosen (their heights go down, so a strictly-increasing height LIS can't pick two of them). So the answer = **LIS on the heights array**.
+**Intuition (reduce to LIS, then patience sort it):** Two dimensions must *both* increase — that's the hard part. **Sorting collapses one of them.** Sort by **width ascending**; then width is already non-decreasing left-to-right, so you no longer have to think about it. All that's left is finding the longest strictly-increasing chain of **heights** — which is exactly LIS, and you solve it with the patience sort from the previous subsection.
 
-**Concrete — why height DESC for ties:** take `[3,3]` and `[3,4]` (same width, can't nest).
-- Height *ascending* tie → heights `[3, 4]` → LIS picks both = 2. **WRONG** (they can't nest).
+The catch is **equal widths** (which can't nest). Fix it with the tie-break: on equal width, sort **height descending**. Then equal-width envelopes have *decreasing* heights, so a strictly-increasing height chain can never pick two of them.
+
+**Concrete — why height DESC on ties:** take `[3,3]` and `[3,4]` (same width → can't nest).
+- Height *ascending* tie → heights `[3, 4]` → LIS picks both = 2. **WRONG.**
 - Height *descending* tie → heights `[4, 3]` → LIS picks one = 1. **Correct.**
-The descending tie-break is what stops equal-width envelopes from being counted together.
 
-**Signature to remember:** sort width ↑, height ↓ on ties → LIS on heights. The tie-break direction is the whole trick.
+**How the patience sort applies here:** identical to LIS — just run it on the **heights** after sorting. Same objects, same two cases per element:
+- `tails[k]` = smallest **height** that a length-`k+1` nesting chain can end with.
+- `size` = length of the best nesting chain so far.
+- For each height `h`: **replace** (`lo < size`) = a better/smaller ending height for a chain length you already had; **append** (`lo == size`) = `h` beat every tail, so you nested one deeper → `size++`.
 
-**Type / knobs:** optimizing (`max`) · reduces to LIS after sorting · use O(n log n) LIS (n can be large).
+**Dry run — `envelopes = [[5,4],[6,4],[6,7],[2,3]]`** (answer 3):
 
-**Time:** O(n log n) — sort + patience-sorting LIS.
-**Space:** O(n).
+Sort → width ↑, height ↓ on ties: `[2,3], [5,4], [6,7], [6,4]`
+*(note `[6,7]` comes before `[6,4]` — same width 6, heights descending)*
+Heights array → `[3, 4, 7, 4]`
 
-### Solution (sort → LIS on heights, O(n log n))
+| `h` | `lo` | `lo == size`? | action | `tails` | `size` |
+|---|---|---|---|---|---|
+| 3 | 0 | 0 == 0 ✓ | APPEND | `[3]` | 0 → 1 |
+| 4 | 1 | 1 == 1 ✓ | APPEND | `[3,4]` | 1 → 2 |
+| 7 | 2 | 2 == 2 ✓ | APPEND | `[3,4,7]` | 2 → 3 |
+| 4 | 1 | 1 == 3 ✗ | replace | `[3,4,7]` | 3 |
+
+Answer `size = 3` → chain `[2,3] → [5,4] → [6,7]`. ✓
+
+The last step is the tie-break paying off: the second height-4 envelope (`[6,4]`) only *replaced* a slot — it never appended — so the two width-6 envelopes were never both counted. Had we sorted heights ascending on ties, `[6,4]` would have come first and `[6,7]` could have appended after it, wrongly giving 4.
+
+**Signature to remember:** sort width ↑, height ↓ on ties → patience-sort LIS on heights. **The tie-break direction is the whole trick.**
+
+**Type / knobs:** optimizing (`max`) · reduces to LIS after sorting · must use the O(n log n) LIS.
+
+**Time:** O(n log n) — sort + patience sort.
+**Space:** O(n) for `tails`.
+
+### Code (sort → patience-sort LIS on heights)
 
 ```java
 int maxEnvelopes(int[][] envelopes) {
-    // width ascending; on equal width, height DESCENDING (so equal widths can't both be chosen)
+    // width ASC; on equal width, height DESC (so equal widths can't both be chosen)
     Arrays.sort(envelopes, (a, b) ->
         a[0] == b[0] ? b[1] - a[1] : a[0] - b[0]);
 
-    // LIS on the heights (patience sorting)
-    int[] tails = new int[envelopes.length];
-    int size = 0;
+    // ── identical to the patience sort above, run on heights ──
+    int[] tails = new int[envelopes.length];   // tails[k] = smallest ending height for chain k+1
+    int size = 0;                              // best nesting chain so far
     for (int[] e : envelopes) {
         int h = e[1];
         int lo = 0, hi = size;
-        while (lo < hi) {                 // first tail >= h  (strict increase)
+        while (lo < hi) {                      // lower bound: first tail >= h (strict increase)
             int mid = (lo + hi) / 2;
             if (tails[mid] < h) lo = mid + 1;
             else hi = mid;
         }
-        tails[lo] = h;
-        if (lo == size) size++;
+        tails[lo] = h;                         // REPLACE or APPEND
+        if (lo == size) size++;                // only appending nests one deeper
     }
     return size;
 }
 ```
 
 **Tips:**
-- **The tie-break is the whole problem.** Width ascending is obvious; height *descending* on equal widths is the subtle part — it prevents equal-width envelopes (which can't nest) from forming a fake increasing height run.
-- After sorting, you've reduced a 2D nesting problem to plain **LIS on heights** — a clean example of "reduce to a known problem by removing a dimension via sorting."
-- Use the **O(n log n) LIS** here (patience sorting), since envelope counts can be large; the O(n²) LIS may TLE.
+- **The tie-break is the whole problem.** Width ascending is obvious; height *descending* on equal widths is the subtle part — it stops equal-width envelopes (which can't nest) from forming a fake increasing height run.
+- After sorting you've **removed a dimension** — a clean example of "reduce to a known problem by sorting away one constraint."
+- Use the **O(n log n)** patience sort here; the O(n²) LIS may TLE on large inputs.
+- Strict nesting → **lower bound** (`tails[mid] < h`), same as strict LIS.
 
-**Trick / clever variant:** **sort to collapse one dimension, then LIS on the other.** The reduce-to-known move (like LPS = LCS(s, reverse(s))) — recognizing "this is LIS wearing a 2D costume" is the insight.
+**Trick / clever variant:** **sort to collapse one dimension, then patience-sort LIS on the other.** Same reduce-to-known move as LPS = LCS(s, reverse(s)) — recognizing "this is LIS wearing a 2D costume" is the insight.
 
 ---
 
@@ -959,7 +1482,41 @@ int change(int amount, int[] coins) {            int change(int amount, int[] co
 
 Each item is used **at most once** (0 or 1 copies). Signature move: when you "take" an item you **move past it** (to `i-1`/`i+1`), unlike unbounded where you stay. State is 2D: `dp[i][budget]` = best/count/feasible using the first `i` items for a given budget/target.
 
-**Knob checklist:** *type?* (min/count/feasible → operator) · *item reuse?* **once** (take → move past item) · *(1D space-opt only)* iterate the budget **backward** (high→low) so an item isn't reused within one pass — the famous 0/1 gotcha.
+**The subproblem, in one sentence:**
+
+> *"Given the first `i` items and `b` budget: either **skip** item `i` (same budget, fewer items) or **take** it (less budget, fewer items) — combine those two already-solved answers."*
+
+```
+dp[i][b] = COMBINE( dp[i-1][b],                      // skip item i
+                    dp[i-1][b - w[i]] (+ value) )    // take item i
+```
+
+Both branches go to `i-1` — **that's the 0/1 signature.** (Unbounded would send "take" back to `dp[i][...]`, same item, because you may reuse it.)
+
+*Why the combine is legal:* once you decide about item `i`, that decision and whatever the first `i-1` items do are **independent** — item `i` doesn't change what the earlier items can achieve with the remaining budget. So you look up an already-solved answer and combine. (Same "fix one decision → the rest is an untouched sub-instance" move as MCM's split and Integer Break's first piece.)
+
+*Why caching is valid:* the answer depends only on `(i, b)`, **not on how you got there**. First 5 items considered with 12 budget left is a fixed fact regardless of which of those 5 you took.
+
+**The one-line classifier — "take → move past, or stay?"**
+- take → `i-1` ⇒ **0/1** (each item once): Partition, Target Sum, Last Stone Weight II
+- take → `i` ⇒ **unbounded** (reuse): Coin Change, Perfect Squares
+
+**Knob checklist:** *type?* (feasible `OR`/base `true` · count `+`/base `1` · optimize `max`/base `0`) · *item reuse?* **once** (take → move past item) · *(1D space-opt only)* iterate the budget **backward** (high→low).
+
+**Why the 1D loop must go backward:** `dp[t]` reads `dp[t-x]`, a lower index. Going **forward**, `dp[t-x]` would already have been updated *with the current item this pass* — taking it again would silently allow a second copy, turning 0/1 into unbounded. Backward keeps `dp[t-x]` holding the *previous* item's value, which is exactly the `dp[i-1][...]` the recurrence demands. **Mnemonic: backward = each item once; forward = unlimited.**
+
+**Look for the reduction first** — many 0/1 problems are disguised subset-sum, and spotting it *is* the insight:
+- Partition Equal Subset Sum → "does a subset sum to `total/2`?" (complement is forced)
+- Target Sum (`±` assignment) → "count subsets summing to `(target+total)/2`"
+- Last Stone Weight II → "which subset sum is closest to `total/2`?"
+
+*Tell:* whenever items split into two groups, **one group determines the other** — so search for only one.
+
+**Cheap early exits:** odd total → Partition instantly false; `(target+total)` odd or negative → Target Sum instantly 0; `target > total` → impossible.
+
+**Complexity is pseudo-polynomial:** O(n × target) — polynomial in the *value* of the target, not its bit-length. Worth saying out loud. If the target can be huge (10⁹), DP is the wrong tool.
+
+**Pre-coding checklist:** (1) take → move past or stay? (2) type → operator + base? (3) is there a reduction? (4) any early exit? (5) 1D collapse → budget loop **backward**.
 
 ---
 
