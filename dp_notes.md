@@ -1478,6 +1478,66 @@ int change(int amount, int[] coins) {            int change(int amount, int[] co
 
 ---
 
+## Minimum Cost For Tickets  *(Coin Change in a calendar disguise)*
+
+**Description:** You travel on the given `days` (sorted, within a year). Passes cost `costs = [1-day, 7-day, 30-day]` and cover that many **consecutive calendar days**. Return the min cost to cover all travel days.
+
+**Example:** `days = [1,4,6,7,8,20]`, `costs = [2,7,15]` → `11` (a 7-day pass covering days 1–7 for 7, plus 1-day passes for 8 and 20... actual optimal picks the cheapest mix). The passes cover *ranges* of the calendar, so a 7-day pass bought on day 1 covers days 1–7.
+
+**Intuition (unbounded, min-cost — like Coin Change):** `dp[i]` = min cost to cover all travel **up to and including calendar day `i`**. Two cases:
+- **Not a travel day** → no new cost; carry forward: `dp[i] = dp[i-1]`.
+- **A travel day** → you must have bought *some* pass that covers day `i`. Which one? Try all three "last passes" and take the min — each looks back to the day *before that pass started* (clamped at 0):
+  - 1-day pass → `dp[i-1] + costs[0]`
+  - 7-day pass → `dp[i-7] + costs[1]`
+  - 30-day pass → `dp[i-30] + costs[2]`
+
+> `dp[i] = min( dp[i-1]+c1,  dp[i-7]+c7,  dp[i-30]+c30 )`  *(travel day)*
+> `dp[i] = dp[i-1]`  *(non-travel day)*
+
+It's Coin Change's "which coin did I use last?" — here it's **"which pass covers today?"** — with the twist that the "amount" is a **calendar position** and passes cover *ranges*, so the look-back jumps by the pass length (clamped at 0), not a coin value.
+
+**The subproblem at each step:** `dp[i]` = *"the cheapest way to have every travel day in `1..i` already covered."* On a travel day, that reduces to *"pick the pass that covers day `i` — 1/7/30-day — pay for it, and add the cheapest way to cover everything before that pass's window began (`dp[i-1]` / `dp[i-7]` / `dp[i-30]`)."* On a non-travel day the subproblem is unchanged from the previous day, so it just carries `dp[i-1]`.
+
+**Signature to remember:** min over 3 passes, each `dp[i - passLen] + cost`, clamped at 0; non-travel days carry `dp[i-1]`.
+
+**Type / knobs:** optimizing (`min`) · unbounded (buy any pass any number of times) · "amount" = calendar day · passes cover *ranges* → look-back jumps by pass length (clamp at 0).
+
+**Time:** O(maxDay).
+**Space:** O(maxDay). *(Can be reduced to tracking only relevant days, but day-indexed is cleanest.)*
+
+### Tabulation  *(day-indexed)*
+
+```java
+int mincostTickets(int[] days, int[] costs) {
+    int maxDay = days[days.length - 1];
+    int[] dp = new int[maxDay + 1];
+    boolean[] isTravelDay = new boolean[maxDay + 1];
+    for (int day : days) isTravelDay[day] = true;
+
+    for (int i = 1; i <= maxDay; i++) {
+        if (!isTravelDay[i]) {
+            dp[i] = dp[i - 1];               // no travel today -> no new cost
+            continue;
+        }
+        int oneDay    = dp[i - 1]            + costs[0];   // last pass = 1-day
+        int sevenDays = dp[Math.max(i-7, 0)] + costs[1];   // last pass = 7-day (clamp at 0)
+        int thirtyDay = dp[Math.max(i-30,0)] + costs[2];   // last pass = 30-day (clamp at 0)
+        dp[i] = Math.min(oneDay, Math.min(sevenDays, thirtyDay));
+    }
+    return dp[maxDay];
+}
+```
+
+**Tips:**
+- **Clamp the look-back at 0** (`Math.max(i-7, 0)`) — a pass bought "before day 1" just covers from the start; `dp[0] = 0`.
+- **Non-travel days carry `dp[i-1]`** for free — you never buy a pass on a day you don't travel.
+- The look-back is by **pass length** (1/7/30 calendar days), not a coin value — that's the disguise. Otherwise it's exactly Coin Change I's min-over-last-choice.
+- Day-indexed `dp` over `1..maxDay` is simplest; a travel-day-only indexing works too but needs "which travel-day-index do I jump to" bookkeeping.
+
+**Trick / clever variant:** none — recognizing it as **Coin Change with calendar-range "coins"** is the whole insight. The passes are unbounded "coins" whose "denomination" is a span of days.
+
+---
+
 # 0/1 Knapsack
 
 Each item is used **at most once** (0 or 1 copies). Signature move: when you "take" an item you **move past it** (to `i-1`/`i+1`), unlike unbounded where you stay. State is 2D: `dp[i][budget]` = best/count/feasible using the first `i` items for a given budget/target.
@@ -1592,6 +1652,236 @@ boolean canPartition(int[] nums) {               boolean canPartition(int[] nums
 - **Set trick:** since it's feasibility, a `Set<Integer>` of reachable sums works instead of the boolean array (store only the `true` cells). Only valid for *feasibility* types (not min/count).
 
 **Trick / clever variant:** **set-of-reachable-sums** — maintain a `Set` of achievable subset sums, expanding by each number; if `total/2` appears, return true. Compact form of feasibility DP. (Also: **Target Sum** reduces here — "assign ± to hit target" becomes "count subsets summing to `(target+total)/2`", a *counting* 0/1 knapsack.)
+
+---
+
+## Target Sum  *(counting 0/1 knapsack — the ± → subset-sum reduction)*
+
+**Description:** Assign a `+` or `−` to each number in `nums` so the signed sum equals `target`. Return the **number** of ways.
+
+**Example:** `nums = [1,1,1,1,1]`, `target = 3` → `5`. (Make one number negative and the other four positive — 5 choices of which one.)
+
+**Intuition (the algebra reduction):** Split the numbers by the sign you assign: let `P` = sum of the ones you make **positive**, `N` = sum of the ones you make **negative**. Then:
+- `P + N = total` (every number is in one group)
+- `P − N = target` (the signed sum)
+
+Add them: `2P = total + target`, so **`P = (total + target) / 2`**. Signs vanish — the problem becomes *"how many subsets sum to exactly `P`?"* (once you pick the positive subset, the negatives are forced). That's a plain **counting 0/1 subset-sum**: combine with `+`, base `dp[·][0] = 1` (one way to make 0 — pick nothing).
+
+> `dp[i][t] = dp[i-1][t]  +  dp[i-1][t - nums[i-1]]`   *(skip + take)*
+
+**Guards (before building the DP):** `P` must be a valid non-negative integer, so:
+- `(total + target)` **odd** → `0` (no subset can sum to a non-integer)
+- `|target| > total` → `0` (unreachable even with all-negative or all-positive)
+
+**Concrete — `nums = [1,1,1,1,1]`, `target = 3`, `total = 5`:** `P = (5 + 3)/2 = 4`. So count subsets of five 1s summing to 4 → choose 4 of 5 → **5 ways**. Matches the original ± count exactly.
+
+**Signature to remember:** `P = (total + target)/2`; guard odd/out-of-range → 0; then count subsets summing to `P`.
+
+**Type / knobs:** counting (`+`) · 0/1 (each number once) · reduces to subset-sum via the ± algebra · impossible → 0 (free).
+
+**Time:** O(n × P).
+**Space:** O(n × P) 2D · O(P) 1D (budget loop backward).
+
+### Tabulation
+
+```java
+int findTargetSumWays(int[] nums, int target) {
+    int n = nums.length, total = 0;
+    for (int num : nums) total += num;
+
+    // P = (total + target) / 2 must be a valid non-negative integer
+    if ((total + target) % 2 != 0 || Math.abs(target) > total) return 0;
+    int P = (total + target) / 2;
+
+    // count subsets summing to P  (counting 0/1 knapsack)
+    int[][] dp = new int[n + 1][P + 1];
+    for (int i = 0; i <= n; i++) dp[i][0] = 1;      // one way to make sum 0: pick nothing
+
+    for (int i = 1; i <= n; i++) {
+        for (int t = 0; t <= P; t++) {
+            dp[i][t] = dp[i - 1][t];                 // skip nums[i-1]
+            if (t >= nums[i - 1])
+                dp[i][t] += dp[i - 1][t - nums[i-1]];// take nums[i-1] (move past it -> 0/1)
+        }
+    }
+    return dp[n][P];
+}
+```
+
+**1D space-opt** (budget backward, the 0/1 gotcha):
+```java
+int[] dp = new int[P + 1];
+dp[0] = 1;
+for (int num : nums)
+    for (int t = P; t >= num; t--)      // BACKWARD -> each number used once
+        dp[t] += dp[t - num];
+return dp[P];
+```
+
+**Tips:**
+- **The reduction is the whole insight:** ± assignment → "count subsets summing to `(total+target)/2`". Derive it from the two equations, don't memorize `P`.
+- **Sign convention:** this uses `P − N = target`. If a problem defines the signed sum as `N − P`, you'd get `P = (total − target)/2` — keep the two equations consistent with the problem.
+- **Both guards matter:** odd `(total+target)` → 0; `|target| > total` → 0. Cheap early exits.
+- Base `dp[·][0] = 1` (counting → one way to make 0). Take-branch reads `dp[i-1][...]` → 0/1; 1D collapse loops budget **backward**.
+- Edge case: `target = total` → count subsets summing to `total` (all positive) → usually 1; `nums` containing 0s multiplies counts (each 0 can be ±, doubling ways).
+
+**Trick / clever variant:** the **± → subset-sum algebra** (`P = (total+target)/2`) is the trick. Turns a "assign signs" problem into standard counting knapsack.
+
+---
+
+## Ones and Zeroes  *(0/1 knapsack with TWO budgets)*
+
+**Description:** Given an array of binary strings `strs` and two budgets `m` (zeros) and `n` (ones), return the size of the largest subset of strings such that the total zeros used ≤ `m` **and** total ones used ≤ `n`.
+
+**Example:** `strs = ["10","0001","111001","1","0"]`, `m = 5`, `n = 3` → `4`. Largest subset fitting both budgets: `{"10","0001","1","0"}`.
+
+**Intuition (0/1 knapsack, two capacities):** Standard "take or skip each item," but each string costs **two resources** — its count of zeros and its count of ones — so the budget is a *pair*. State grows to 3D: `dp[i][j][k]` = max subset size using the first `i` strings within `j` zeros and `k` ones. Each string is used **at most once** (0/1), and the "value" is just `+1` (you're counting strings). Take → move past the item and spend *both* budgets:
+
+> `dp[i][j][k] = max( dp[i-1][j][k],                                 // skip string i`
+> `                   dp[i-1][j-zeros_i][k-ones_i] + 1 )`   *(take, if both fit)*
+
+It's the same take/skip 0/1 recurrence — the only change is that "budget" is two-dimensional, so both must have room to take an item.
+
+**The counting trick:** `track[i][c - '0']++` tallies each string's zeros and ones in one pass — `c-'0'` maps `'0'→index 0`, `'1'→index 1`, so `track[i][0]` = zeros, `track[i][1]` = ones.
+
+**Concrete — deciding string `"0001"` (3 zeros, 1 one) at budget `(j,k)`:**
+- **skip** → `dp[i-1][j][k]`
+- **take** (needs `j ≥ 3` zeros and `k ≥ 1` one) → `dp[i-1][j-3][k-1] + 1`
+
+Take the max. Both budgets must have room, or only skip is available.
+
+**Signature to remember:** 0/1 take/skip with a **budget pair** `(zeros, ones)`; value `+1`; take spends both budgets and moves past the item.
+
+**Type / knobs:** optimizing (`max` subset size) · 0/1 (each string once) · **two budgets** → 3D state · impossible handled by the `max` naturally.
+
+**Time:** O(len × m × n).
+**Space:** O(len × m × n) 3D · O(m × n) 2D (both budget loops backward).
+
+### Tabulation
+
+```java
+int findMaxForm(String[] strs, int m, int n) {
+    int len = strs.length;
+    int[][][] dp = new int[len + 1][m + 1][n + 1];
+
+    // tally zeros/ones per string: track[i][0]=zeros, track[i][1]=ones
+    int[][] track = new int[len][2];
+    for (int i = 0; i < len; i++)
+        for (char c : strs[i].toCharArray())
+            track[i][c - '0']++;                 // c-'0' -> 0 or 1
+
+    for (int i = 1; i <= len; i++) {
+        int zeros = track[i-1][0], ones = track[i-1][1];
+        for (int j = 0; j <= m; j++) {           // zeros budget
+            for (int k = 0; k <= n; k++) {       // ones budget
+                dp[i][j][k] = dp[i-1][j][k];     // skip string i-1
+                if (j >= zeros && k >= ones)     // take, if BOTH budgets fit
+                    dp[i][j][k] = Math.max(dp[i][j][k],
+                                  dp[i-1][j-zeros][k-ones] + 1);
+            }
+        }
+    }
+    return dp[len][m][n];
+}
+```
+
+**2D space-opt** (drop the item dimension; loop **both** budgets backward — the 0/1 gotcha, now in 2D):
+```java
+int[][] dp = new int[m + 1][n + 1];
+for (String s : strs) {
+    int zeros = 0, ones = 0;
+    for (char c : s.toCharArray()) { if (c == '0') zeros++; else ones++; }
+    for (int j = m; j >= zeros; j--)             // BACKWARD
+        for (int k = n; k >= ones; k--)          // BACKWARD
+            dp[j][k] = Math.max(dp[j][k], dp[j - zeros][k - ones] + 1);
+}
+return dp[m][n];
+```
+
+**Tips:**
+- **Two budgets → one extra state dimension.** The recurrence is unchanged from single-budget 0/1; you just carry a *pair* and require both to fit before taking. Generalizes: k resources → k budget dimensions.
+- **`c - '0'` as an index** is the clean tally trick — no `if/else` needed to count zeros vs ones.
+- **2D collapse loops BOTH budgets backward** (each string once) — same reason as single-budget 0/1: forward would let a string be reused.
+- **Not the same as coin/subset-sum** — here the "value" is `+1` (count of items) and you *maximize count* under two caps, rather than hitting an exact target. It's the classic "maximize items in a knapsack" flavor, doubled.
+
+**Trick / clever variant:** none — it's the **multi-dimensional knapsack** template: each added constraint is one more budget axis on the same take/skip recurrence.
+
+---
+
+## Last Stone Weight II  *(0/1 knapsack — subset closest to total/2)*
+
+**Description:** Repeatedly smash any two stones `x, y` (`x ≤ y`); they become `y - x` (or both vanish if equal). Return the **smallest possible weight** of the last remaining stone (0 if none remain).
+
+**Example:** `stones = [2,7,4,1,8,1]` → `1`. (Total 23; best split leaves difference 1.)
+
+**Intuition (the reframe — smashing = signing):** Every smash assigns a `+` or `−` to stones. After all smashes, the final weight is `|sum of one group − sum of the other group|`. So you're really **partitioning stones into two groups** and minimizing the difference of their sums. Call one group's sum `S`; the other is `total - S`, and the difference is `|total - 2S|`. To minimize that, make `S` **as close to `total/2` as possible from below**.
+
+So it becomes 0/1 knapsack: *"what's the largest subset sum `S ≤ total/2` I can achieve?"* Then the answer is `total - 2·S`. `dp[i][t]` = the max achievable subset sum **using the first `i` stones, not exceeding budget `t`** (a bounded-value knapsack — value = weight = cost).
+
+> `dp[i][t] = max( dp[i-1][t],                          // skip stone i`
+> `                dp[i-1][t - w] + w )`   *(take stone i, if `t ≥ w`)*
+
+**The subproblem at each tabulation step:** `dp[i][t]` answers *"considering only the first `i` stones, what's the **biggest sum I can pack into a knapsack of capacity `t`**?"* At stone `i` (weight `w`):
+- **skip it** → best stays `dp[i-1][t]` (same capacity, one fewer stone)
+- **take it** (needs `t ≥ w`) → add `w` to the best sum that fit in the *leftover* capacity `t - w` using earlier stones → `dp[i-1][t-w] + w`
+
+Take the max. Filling the table over all `t` up to `total/2` finds, at `dp[n][total/2]`, the **largest subset sum that doesn't exceed half** — i.e. the group sum closest to `total/2` from below.
+
+**Concrete — stone `w = 7` at capacity `t = 10`:**
+- skip → `dp[i-1][10]`
+- take → `dp[i-1][3] + 7` (best sum fitting in capacity 3, plus this stone)
+
+Whichever packs more weight into capacity 10 wins.
+
+**Why `total - 2·S`:** one group sums to `S` (as close to `total/2` as possible), the other to `total - S`; their difference is `(total - S) - S = total - 2S`. Since `S ≤ total/2`, this is ≥ 0 and minimized when `S` is maximal.
+
+**Signature to remember:** smashing = ± signs → minimize `|total - 2S|` → maximize subset sum `S ≤ total/2` (bounded knapsack) → answer `total - 2·S`.
+
+**Type / knobs:** optimizing (`max` subset sum) · 0/1 (each stone once) · target = `total/2` · value = weight = cost (bounded knapsack).
+
+**Time:** O(n × total/2).
+**Space:** O(n × total/2) 2D · O(total/2) 1D (budget backward).
+
+### Tabulation
+
+```java
+int lastStoneWeightII(int[] stones) {
+    int total = 0;
+    for (int s : stones) total += s;
+    int n = stones.length, target = total / 2;   // aim for a subset sum near total/2
+
+    int[][] dp = new int[n + 1][target + 1];      // dp[i][t] = max subset sum <= t using first i stones
+
+    for (int i = 1; i <= n; i++) {
+        int w = stones[i - 1];
+        for (int t = 0; t <= target; t++) {
+            if (t >= w)
+                dp[i][t] = Math.max(dp[i-1][t],          // skip stone i
+                                    dp[i-1][t - w] + w); // take it (pack w into capacity t)
+            else
+                dp[i][t] = dp[i-1][t];                   // too heavy for this capacity -> skip
+        }
+    }
+    return total - 2 * dp[n][target];             // difference of the two group sums
+}
+```
+
+**1D space-opt** (budget backward, 0/1):
+```java
+int[] dp = new int[target + 1];
+for (int w : stones)
+    for (int t = target; t >= w; t--)     // BACKWARD -> each stone once
+        dp[t] = Math.max(dp[t], dp[t - w] + w);
+return total - 2 * dp[target];
+```
+
+**Tips:**
+- **The reframe is everything:** "smash stones" → "split into two groups, minimize difference" → "maximize a subset sum ≤ total/2." Without seeing that, the problem looks nothing like knapsack.
+- **`dp[i][t]` here is a bounded-value knapsack** (value = weight), *not* feasibility — you want the *largest achievable sum* ≤ `t`, so combine with `max` and take/skip carry the weight.
+- Answer is `total - 2·S`, not `S` — a classic slip. `S` is one group's sum; you want the *difference*.
+- Cousin of **Partition Equal Subset Sum**: if `total - 2·S == 0`, the stones partition evenly (that's the Partition problem as the special case where the min difference is 0).
+
+**Trick / clever variant:** **smashing = ± signs = two-group partition.** Same "one group determines the other" reduction as Partition/Target Sum — here you *minimize the gap* to `total/2` instead of hitting it exactly.
 
 ---
 
